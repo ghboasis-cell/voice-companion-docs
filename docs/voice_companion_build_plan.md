@@ -1,8 +1,10 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v4.3 ／ 最終更新日: 2026-07-11**
+**版数: v4.4 ／ 最終更新日: 2026-07-11**
 
 （2026-07-11 staging(voice-companion-staging)の Anonymous sign-ins を有効化。理由: RLS / `current_app_user_id()` 検証のため。本番挙動に合わせ有効のまま維持。）
+
+（v4.4: 2026-07-11 staging(voice-companion-staging)でRLS / `current_app_user_id()` を検証し両方PASSした事実を記録（本番での同確認は未完了として据え置き）。あわせてルール1-2を実態に合わせ書き換え: specとbuild planは常に同版数にはせず、片方だけ内容が変わった場合はその方だけ版数を上げ変更履歴で対応関係を示す方針とした。build planをv4.3→v4.4へ、specはv4.3据え置き。）
 
 （v4.3: 複数機能をまとめて実装・確認する旧方式を廃止。利用者から見て一つの機能として成立する単位ごとに、Codexが実装、必要な修正、自動テスト、ビルド、commit、push、PR作成まで連続して進める運用へ変更。ユーザーは原則PRレビュー後のマージ、本番反映が必要な場合の操作、最終的な実機確認を行う。MDに答えがなく製品仕様が変わる判断、または認証・RLS・課金・本番データの破壊的変更に関わる安全確認だけ停止して報告する。）
 
@@ -41,7 +43,7 @@
 - ファイル冒頭に「版数・最終更新日」を必ず持つ。
 - **マイナー（0.1上げ）** = 項目の追加・修正。通常の更新。
 - **メジャー（1.0上げ）** = 大きな方針転換、または実装フェーズ移行の節目。
-- 仕様書と本書の版数は揃える（対応が分かるように）。現在の対象仕様は `docs/voice_companion_spec.md` v4.3 正本。
+- 仕様書と本書は、対応が分かるように管理する。両者を常に同じ版数にはしない。**片方だけ内容が変わった場合は、変わった方だけ版数を上げ、変更履歴で対応関係を示す。** 中身が変わっていないファイルの版数を、同期目的だけで上げない。現在の対象仕様は `docs/voice_companion_spec.md` v4.3 正本。
 
 ## 1-3. 要件が変わった時のルール
 1. 仕様書の該当箇所を**直接書き換える**（正本なので最新が正）。
@@ -148,7 +150,8 @@
   - PR #28で完了: 初回名前入力、初回キャラ選択、初回好意度/第一印象選択、`user_characters` / `character_relationships` 初期行作成のクライアント実装を追加済み。
   - 本番反映済み: `20260706090000_init_voice_companion_phase1_schema.sql`、`20260707140000_add_transfer_codes.sql`、`20260708090000_align_v4_auth_rls.sql`、`20260708120000_add_onboarding_profile_and_cats.sql`、`20260709000000_add_deletion_audit_and_schema_gaps.sql` は本番Supabaseへ `supabase db push` 済み。
   - PR #29後の実機確認: 本番Supabase Dashboardで Anonymous sign-ins をONにし、`Anonymous sign-ins are disabled` エラーが解消したことを確認済み。実機で名前入力 → キャラ選択 → 初回関係選択 → トーク画面と思われる画面まで遷移できた。
-  - 未完了: RLS実動作の詳細確認、アプリ側で `current_app_user_id()` 経由により `public.users.id` を正しく取得できるかの追加確認。
+  - stagingで確認済み（2026-07-11・PASS）: 匿名セッションから `current_app_user_id()` が本人の `public.users.id` を正しく返し（`user_auth_links` の `is_current=true` は1件のみ）、RLSにより他ユーザーの `settings` / `coin_balances` / `user_characters` / `chat_messages` 行が読めない・フィルタ指定でも取得できないことを確認（漏れなし）。`chat_messages` は本人 `public.users.id` でのinsert成功と、本人のみ読める・別ユーザーから読めないことも確認。anon key + 匿名JWTのみで実施（service_role不使用）、RLSが実際に効いた状態。テストユーザー/データは削除済み。なおこれはstagingのRLS/`current_app_user_id()`動作確認であり、migrationを`db push`して本番前検証する作業ではない（stagingスキーマは既存前提）。
+  - 未完了: 本番(voice-companion)での同じRLS実動作・`current_app_user_id()` による本番 `public.users.id` 解決の確認。
   - 未完了: 引き継ぎコード発行/入力のRPCまたはEdge Function設計と実装。
   - RevenueCat連携は `app_user_id = public.users.id` 前提に揃える。`auth.users.id` をRevenueCat app user idにする設計は廃止済み。
   - したがって「DB土台、PR #25 migration、PR #28 migration/クライアント土台、本番Supabaseへの指定migration反映は完了済み」だが「v4.3 DB/RLS完了」ではない。
@@ -184,7 +187,8 @@ PR #28/#29後の整理:
 - PR #29後の実機確認結果: Supabase Dashboardで Anonymous sign-ins をONにした。これにより `Anonymous sign-ins are disabled` エラーは解消。実機で名前入力 → キャラ選択 → 初回関係選択 → トーク画面と思われる画面まで遷移できたため、PR #29時点の初回オンボーディング導線は最低限成立している。
 - 注意: 上記は完成版の本番デザイン確認ではない。現状はフォーム中心の仮UIであり、本番デザイン作り込み、本格AIチャット、通話、通知、課金、引き継ぎ、退会は未完了。
 - 本番反映済み: 指定migration 5件は本番Supabaseへ `supabase db push` 済み。
-- 未完了: RLS実動作の詳細確認、`current_app_user_id()` が本番で正しい `public.users.id` を返す確認、完成版の本番デザイン確認。
+- stagingで確認済み（2026-07-11・PASS）: RLS実動作と `current_app_user_id()` による `public.users.id` 解決を staging で検証し漏れなし（詳細はフェーズ1「DBテーブル構築 / v4.3 Auth整合確認」参照）。
+- 未完了: 本番(voice-companion)でのRLS実動作・`current_app_user_id()` が本番で正しい `public.users.id` を返す確認、完成版の本番デザイン確認。
 
 ## 機能単位の自立型開発運用
 
@@ -221,5 +225,5 @@ PR #28/#29後の整理:
 - Z-4（記憶の日数・遅延）→ フェーズ0/3で実測しながら
 - Z-6（声・素材）→ フェーズ0。声モデルの商用ライセンス確認とv1仮採用は完了。残りは実際のTTS品質・音声サンプル確認。
 - Z-7（画面設計）→ フェーズ1/3で各画面を作りながら確定
-- Z-8（RLS・API）→ フェーズ1。RLS・制約・インデックスのDB土台と指定migration 5件の本番反映は完了済み。ただしv4.3匿名Auth方針でのRLS実動作と `current_app_user_id()` による本番 `public.users.id` 解決は未確認。API設計、Edge Function整理、アプリ側読み書き実装も未完了。匿名サインインと引き継ぎコードを前提にする。`transfer_codes` はテーブル追加のみで、発行/引き換え用 Edge Function / RPC とUIは未実装。
+- Z-8（RLS・API）→ フェーズ1。RLS・制約・インデックスのDB土台と指定migration 5件の本番反映は完了済み。v4.3匿名Auth方針でのRLS実動作と `current_app_user_id()` による `public.users.id` 解決は staging で検証済み・PASS（2026-07-11、漏れなし）。本番(voice-companion)での同確認は未完了。API設計、Edge Function整理、アプリ側読み書き実装も未完了。匿名サインインと引き継ぎコードを前提にする。`transfer_codes` はテーブル追加のみで、発行/引き換え用 Edge Function / RPC とUIは未実装。
 - Z-9（実機検証）→ フェーズ0・フェーズ4。Androidモーニング導線のフェーズ0検証は合格、残りは本番AI接続・フォールバック・リリース前総合確認。
