@@ -2,6 +2,8 @@
 
 **版数: v4.3 ／ 最終更新日: 2026-07-11**
 
+（2026-07-11 staging(voice-companion-staging)の Anonymous sign-ins を有効化。理由: RLS / `current_app_user_id()` 検証のため。本番挙動に合わせ有効のまま維持。）
+
 （v4.3: 複数機能をまとめて実装・確認する旧方式を廃止。利用者から見て一つの機能として成立する単位ごとに、Codexが実装、必要な修正、自動テスト、ビルド、commit、push、PR作成まで連続して進める運用へ変更。ユーザーは原則PRレビュー後のマージ、本番反映が必要な場合の操作、最終的な実機確認を行う。MDに答えがなく製品仕様が変わる判断、または認証・RLS・課金・本番データの破壊的変更に関わる安全確認だけ停止して報告する。）
 
 （v4.2: specとbuild planの版数を同期。本番Supabaseへ指定済みmigration 5件を `supabase db push` 済みとして記録し、旧migration差分確認作業を完了事項へ移動。正本MDで決定済みの作業はCodexが実装・修正・テスト・commit・PR作成まで連続して進める運用、Supabase運用、モデル運用を追加。）
@@ -74,6 +76,7 @@
   - 無料プロジェクト。追加料金なし。7日無操作で自動停止(使う時に手動再開)
   - 用途: スキーマ変更・migration を本番前に検証するための使い捨て環境
 - 本番プロジェクト: voice-companion (ref: <prod-ref>, Tokyo)
+- 2026-07-11: staging の Anonymous sign-ins を有効化した。理由: RLS / `current_app_user_id()` 検証のため。本番挙動に合わせ、有効のまま維持する。
 
 ### 検証フロー
 1. staging に link 切り替え: ! supabase link --project-ref <staging-ref>
