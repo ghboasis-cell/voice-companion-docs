@@ -1,8 +1,10 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v4.4 ／ 最終更新日: 2026-07-11**
+**版数: v4.5 ／ 最終更新日: 2026-07-12**
 
 （2026-07-11 staging(voice-companion-staging)の Anonymous sign-ins を有効化。理由: RLS / `current_app_user_id()` 検証のため。本番挙動に合わせ有効のまま維持。）
+
+（v4.5: 2026-07-12 stagingでPR #38の疑似LINE会話コアを実機確認し、ユーザー発言保存、AI返信、成功時の1応答分コイン消費、失敗時の非消費を確認した事実を記録。`chat-reply` 用 `OPENAI_API_KEY` 設定済み、および `20260712080000_fix_complete_chat_reply_balance_ambiguity.sql` のstaging適用済みを記録。PR #40の通常起動確認済み・実際の時刻ずれ再現は未実施であること、PR #38/#39 merge後に#40をmain基準へ載せ直す前提を記録。specの製品仕様は変更しないためv4.3据え置き。）
 
 （v4.4: 2026-07-11 staging(voice-companion-staging)でRLS / `current_app_user_id()` を検証し両方PASSした事実を記録（本番での同確認は未完了として据え置き）。あわせてルール1-2を実態に合わせ書き換え: specとbuild planは常に同版数にはせず、片方だけ内容が変わった場合はその方だけ版数を上げ変更履歴で対応関係を示す方針とした。build planをv4.3→v4.4へ、specはv4.3据え置き。）
 
@@ -143,6 +145,7 @@
   - PR #29後の実機確認: Supabase Dashboardで Anonymous sign-ins をONにしたことで `Anonymous sign-ins are disabled` エラーは解消。実機で名前入力 → キャラ選択 → 初回関係選択 → トーク画面と思われる画面まで遷移でき、初回オンボーディング導線は最低限成立していることを確認済み。
   - 本番反映済み: `20260706090000_init_voice_companion_phase1_schema.sql`、`20260707140000_add_transfer_codes.sql`、`20260708090000_align_v4_auth_rls.sql`、`20260708120000_add_onboarding_profile_and_cats.sql`、`20260709000000_add_deletion_audit_and_schema_gaps.sql` は本番Supabaseへ `supabase db push` 済み。
   - 残り: アプリ側で `current_app_user_id()` 経由により `public.users.id` を正しく取得できるかの追加確認、引き継ぎコード発行/入力、引き継ぎ用 RPC または Edge Function 設計と実装。
+  - PR #40（Draft、base: `agent/staging-aab-chat-test`）のJWT時刻ずれ回復修正は、staging実機で通常起動を確認済み。実際の端末時刻ずれを再現した回復テストは未実施であり、完了扱いにしない。#40は現baseのままmainへマージせず、PR #38/#39をmainへ入れた後に#40固有の変更だけをmain基準へ載せ直す。
 - [~] DBテーブル構築 / v4.3 Auth整合確認（RLS・制約・インデックス）
   - 完了: migration作成・PR #25 merge・local `supabase db reset` による `20260706090000_init_voice_companion_phase1_schema.sql`、`20260707140000_add_transfer_codes.sql`、`20260708090000_align_v4_auth_rls.sql` の適用確認は完了。
   - ただし上記は「migration作成・merge・local db reset確認」の完了であり、「Phase1 DB/RLS全体完了」ではない。
@@ -160,7 +163,8 @@
   - 未完了: 本格ナビゲーション設計、実機UI検証、通知/モーニング/通話/課金/引き継ぎ/退会など本番機能画面への接続。
 - [~] 疑似LINEチャット画面（`chat_messages` の表示・送信。通知タップ後の入口メッセージ、通話見出しの差し込み枠も）
   - PR #28で完了: ホームから選択済みキャラの仮チャット画面へ遷移する土台を追加済み。ホームではメッセージ本文を表示せず、状態表示のみとする方針を反映済み。
-  - 未完了: `chat_messages` のDB保存/表示、AI応答、コイン消費、通知タップ後の入口メッセージ、通話見出し差し込み。
+  - PR #38（Draft、`agent/chat-conversation-core` → main）で実装済み・staging実機確認済み（2026-07-12）: ユーザー発言の`chat_messages`保存、AI返信の保存・時系列表示、返信成功時の1応答分コイン消費、失敗時のコイン非消費。stagingの`chat-reply`には`OPENAI_API_KEY`を設定済み。`20260712080000_fix_complete_chat_reply_balance_ambiguity.sql` をstagingへ適用し、`complete_chat_reply()`の`balance`曖昧参照を修正済み。
+  - 未完了: PR #38のmain mergeと本番反映・本番実機確認、通知タップ後の入口メッセージ、通話見出し差し込み。本番確認前のため本項目は進行中のままとする。
 - [~] キャラ選択・オンボーディング（匿名セッション確立後に名前入力。氏名のみ必須。呼び方初期指定UIは作らない）
   - PR #28で完了: 名前入力、キャラ選択、人間6人 + AI猫 + ランダム猫の表示、ランダム猫の初回AIメイン選択不可表示、キャラ名自由入力、初回関係3択、初期行作成、完了後ホーム遷移を追加済み。
   - PR #29後の実機確認: 実機・本番Supabaseで、名前入力 → キャラ選択 → 初回関係選択 → トーク画面と思われる画面までの導線は最低限成立していることを確認済み。
@@ -178,12 +182,19 @@
 - 引き継ぎコード発行/入力は、RPCまたはEdge Function設計と実装が未完了。
 - DB詳細は `voice_companion_spec.md` C章を正とする。
 
+PR #38/#39/#40の整理（2026-07-12）:
+
+- PR #38（Draft、`agent/chat-conversation-core` → main）: 疑似LINE会話コア。staging実機でユーザー発言保存、AI返信、成功時1応答分のコイン消費、失敗時の非消費を確認済み。stagingへ`20260712080000_fix_complete_chat_reply_balance_ambiguity.sql`を適用済み。本番反映・本番実機確認は未実施。
+- PR #39（Draft、`agent/add-staging-aab-workflow` → main）: staging用Android AAB workflow。PR #38とは独立したPRとして維持する。
+- PR #40（Draft、`agent/recover-anonymous-jwt-clock-skew` → `agent/staging-aab-chat-test`）: JWT時刻ずれ回復。通常起動は確認済みだが、実際の時刻ずれ再現テストは未実施。現在のbaseが一時ブランチのため、このままmainへマージしない。#38と#39をmainへ取り込んだ後、#40固有の変更のみをmain基準へ載せ直してからレビューする。
+
 PR #28/#29後の整理:
 
 - 実施済み: PR #28はmerge済み。production UI土台、起動 / 準備中画面、初回名前入力画面、キャラ選択画面、キャラ名 + 初回関係設定画面、`user_characters` / `character_relationships` 初期行作成処理、疑似LINEホーム仮画面、疑似LINEチャット仮画面、キャラ管理仮画面、設定画面、テーマ切替、利用規約 / プライバシーポリシー仮ページを追加済み。
 - 実施済み: migration `20260708120000_add_onboarding_profile_and_cats.sql` を追加済み。`public.users` に `family_name` / `given_name` / `family_name_kana` / `given_name_kana` を追加し、`public.characters` に仮キャラ8件をseedし、`public.users` の更新権限をオンボーディングプロフィール項目に限定する。
 - PR #29で整理すること: 上記production onboarding UI / 画面構成 / 画面遷移 / テーマ仕様を `docs/voice_companion_spec.md` の正本仕様へ反映し、本書では「UI土台は入った」と「本番機能完成」を分けて記録する。
-- 未完了: 本格AIチャット、`chat_messages` のDB保存/表示、AI応答、コイン消費、本格通話、コール画面、通話中画面、通話終了画面、モーニングコール本実装、通知送信、RevenueCat課金、引き継ぎコード発行 / 入力、引き継ぎ用 RPC または Edge Function、退会処理。
+- 進行中: 疑似LINEの`chat_messages`保存/表示、AI応答、コイン消費はPR #38で実装済み・staging実機確認済み。本番反映・本番実機確認前のため完了扱いにはしない。
+- 未完了: 本格通話、コール画面、通話中画面、通話終了画面、モーニングコール本実装、通知送信、RevenueCat課金、引き継ぎコード発行 / 入力、引き継ぎ用 RPC または Edge Function、退会処理、通知タップ後の入口メッセージ、通話見出し差し込み。
 - PR #29後の実機確認結果: Supabase Dashboardで Anonymous sign-ins をONにした。これにより `Anonymous sign-ins are disabled` エラーは解消。実機で名前入力 → キャラ選択 → 初回関係選択 → トーク画面と思われる画面まで遷移できたため、PR #29時点の初回オンボーディング導線は最低限成立している。
 - 注意: 上記は完成版の本番デザイン確認ではない。現状はフォーム中心の仮UIであり、本番デザイン作り込み、本格AIチャット、通話、通知、課金、引き継ぎ、退会は未完了。
 - 本番反映済み: 指定migration 5件は本番Supabaseへ `supabase db push` 済み。
