@@ -1,10 +1,12 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v4.5 ／ 最終更新日: 2026-07-12**
+**版数: v4.6 ／ 最終更新日: 2026-07-12**
 
 （2026-07-11 staging(voice-companion-staging)の Anonymous sign-ins を有効化。理由: RLS / `current_app_user_id()` 検証のため。本番挙動に合わせ有効のまま維持。）
 
-（v4.5: 2026-07-12 stagingでPR #38の疑似LINE会話コアを実機確認し、ユーザー発言保存、AI返信、成功時の1応答分コイン消費、失敗時の非消費を確認した事実を記録。`chat-reply` 用 `OPENAI_API_KEY` 設定済み、および `20260712080000_fix_complete_chat_reply_balance_ambiguity.sql` のstaging適用済みを記録。PR #40の通常起動確認済み・実際の時刻ずれ再現は未実施であること、PR #38/#39 merge後に#40をmain基準へ載せ直す前提を記録。specの製品仕様は変更しないためv4.3据え置き。）
+（v4.6: 2026-07-12 PR #42のJWT時刻ずれ回復を記録。staging AABで通常起動、メッセージ送信、AI返信を確認済み。実際の端末時刻ずれは安定して再現できないため、再現テストは実施しない。JWT時刻ずれ系エラー検出、自動refresh、再読込、失敗時の日時自動設定案内は自動テスト済み。PR #42はレビュー・マージ待ち。specの製品仕様は変更しないためv4.3据え置き。）
+
+（v4.5: 2026-07-12 stagingでPR #38の疑似LINE会話コアを実機確認し、ユーザー発言保存、AI返信、成功時の1応答分コイン消費、失敗時の非消費を確認した事実を記録。`chat-reply` 用 `OPENAI_API_KEY` 設定済み、および `20260712080000_fix_complete_chat_reply_balance_ambiguity.sql` のstaging適用済みを記録。specの製品仕様は変更しないためv4.3据え置き。）
 
 （v4.4: 2026-07-11 staging(voice-companion-staging)でRLS / `current_app_user_id()` を検証し両方PASSした事実を記録（本番での同確認は未完了として据え置き）。あわせてルール1-2を実態に合わせ書き換え: specとbuild planは常に同版数にはせず、片方だけ内容が変わった場合はその方だけ版数を上げ変更履歴で対応関係を示す方針とした。build planをv4.3→v4.4へ、specはv4.3据え置き。）
 
@@ -145,7 +147,7 @@
   - PR #29後の実機確認: Supabase Dashboardで Anonymous sign-ins をONにしたことで `Anonymous sign-ins are disabled` エラーは解消。実機で名前入力 → キャラ選択 → 初回関係選択 → トーク画面と思われる画面まで遷移でき、初回オンボーディング導線は最低限成立していることを確認済み。
   - 本番反映済み: `20260706090000_init_voice_companion_phase1_schema.sql`、`20260707140000_add_transfer_codes.sql`、`20260708090000_align_v4_auth_rls.sql`、`20260708120000_add_onboarding_profile_and_cats.sql`、`20260709000000_add_deletion_audit_and_schema_gaps.sql` は本番Supabaseへ `supabase db push` 済み。
   - 残り: アプリ側で `current_app_user_id()` 経由により `public.users.id` を正しく取得できるかの追加確認、引き継ぎコード発行/入力、引き継ぎ用 RPC または Edge Function 設計と実装。
-  - PR #40（Draft、base: `agent/staging-aab-chat-test`）のJWT時刻ずれ回復修正は、staging実機で通常起動を確認済み。実際の端末時刻ずれを再現した回復テストは未実施であり、完了扱いにしない。#40は現baseのままmainへマージせず、PR #38/#39をmainへ入れた後に#40固有の変更だけをmain基準へ載せ直す。
+  - PR #42（Draft、`agent/recover-anonymous-jwt-clock-skew-main` → main）でJWT時刻ずれ回復を実装。staging AABで通常起動、メッセージ送信、AI返信を確認済み。実際の端末時刻ずれは安定して再現できないため、再現テストは実施しない。JWT時刻ずれ系エラー検出、自動refresh、再読込、失敗時の日時自動設定案内は自動テスト済み。PR #42はレビュー・マージ待ち。
 - [~] DBテーブル構築 / v4.3 Auth整合確認（RLS・制約・インデックス）
   - 完了: migration作成・PR #25 merge・local `supabase db reset` による `20260706090000_init_voice_companion_phase1_schema.sql`、`20260707140000_add_transfer_codes.sql`、`20260708090000_align_v4_auth_rls.sql` の適用確認は完了。
   - ただし上記は「migration作成・merge・local db reset確認」の完了であり、「Phase1 DB/RLS全体完了」ではない。
@@ -182,11 +184,11 @@
 - 引き継ぎコード発行/入力は、RPCまたはEdge Function設計と実装が未完了。
 - DB詳細は `voice_companion_spec.md` C章を正とする。
 
-PR #38/#39/#40の整理（2026-07-12）:
+PR #38/#39/#42の整理（2026-07-12）:
 
 - PR #38（Draft、`agent/chat-conversation-core` → main）: 疑似LINE会話コア。staging実機でユーザー発言保存、AI返信、成功時1応答分のコイン消費、失敗時の非消費を確認済み。stagingへ`20260712080000_fix_complete_chat_reply_balance_ambiguity.sql`を適用済み。本番反映・本番実機確認は未実施。
 - PR #39（Draft、`agent/add-staging-aab-workflow` → main）: staging用Android AAB workflow。PR #38とは独立したPRとして維持する。
-- PR #40（Draft、`agent/recover-anonymous-jwt-clock-skew` → `agent/staging-aab-chat-test`）: JWT時刻ずれ回復。通常起動は確認済みだが、実際の時刻ずれ再現テストは未実施。現在のbaseが一時ブランチのため、このままmainへマージしない。#38と#39をmainへ取り込んだ後、#40固有の変更のみをmain基準へ載せ直してからレビューする。
+- PR #42（Draft、`agent/recover-anonymous-jwt-clock-skew-main` → main）: JWT時刻ずれ回復。staging AABで通常起動、メッセージ送信、AI返信を確認済み。実際の端末時刻ずれは安定して再現できないため、再現テストは実施しない。JWT時刻ずれ系エラー検出、自動refresh、再読込、失敗時の日時自動設定案内は自動テスト済み。レビュー・マージ待ち。
 
 PR #28/#29後の整理:
 
