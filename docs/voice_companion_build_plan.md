@@ -1,8 +1,10 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.13 ／ 最終更新日: 2026-07-15**
+**版数: v5.14 ／ 最終更新日: 2026-07-16**
 
-（v5.13: 正本spec A7の未実装だった疑似電話後の通話見出し差し込みを実装した。終了済み本人callだけを対象に、security-definer RPC `create_call_summary_header`がcall行lock下で`message_type=call_summary_header`の固定見出しを1件だけ作成し、`calls.chat_header_message_id`へ紐づける。逐語ログは疑似LINEへ表示しない。owner単位の永続outboxでpending保存後に再送し、content保存・コイン精算とは独立させる。開始失敗callでは見出しを作らない。migration `20260715210000_add_call_summary_header.sql`は作成済み・staging未適用で、本番Supabase・本番Edge Functionは未変更。冪等作成、owner分離、オフライン復元、content失敗非依存、固定表示を自動テストでPASSした。）
+（v5.14: 疑似LINE履歴のピン留めを実装した。本文メッセージと通話見出しの各行にピン切替を追加し、`security definer`かつ固定`search_path`の`set_chat_message_pinned` RPCが`current_app_user_id()`で解決した`public.users.id`所有者だけの`chat_messages.pinned`を更新する。通話見出しでは同じトランザクション内で対応する本人所有`calls.pinned`も同期し、90日保持対象の両側を一致させる。`chat_messages`の広い直接UPDATE権限は戻さない。migration `20260716100000_add_chat_history_pinning.sql`は作成済み・staging未適用で、本番Supabase・本番Edge Functionは未変更。本人確認、行lock、権限限定、通話見出し同期、UIの失敗時復元を自動テストする。）
+
+（v5.13: 正本spec A7の未実装だった疑似電話後の通話見出し差し込みを実装した。終了済み本人callだけを対象に、security-definer RPC `create_call_summary_header`がcall行lock下で`message_type=call_summary_header`の固定見出しを1件だけ作成し、`calls.chat_header_message_id`へ紐づける。逐語ログは疑似LINEへ表示しない。owner単位の永続outboxでpending保存後に再送し、content保存・コイン精算とは独立させる。開始失敗callでは見出しを作らない。PR #54はmainへマージ済み（merge commit: `79809d36b94e43f5be46c14006d4685308de7425`）。migration `20260715210000_add_call_summary_header.sql`はstaging適用済みで、Android staging AAB workflow run `29426984799`は成功した。本番Supabase・本番Edge Functionは未変更。冪等作成、owner分離、オフライン復元、content失敗非依存、固定表示を自動テストでPASSした。）
 
 （v5.12: PR #52をmainへマージ（merge commit: `cc01a9cca399f60b666e040f7417f3b554148906`）。通話コイン一括精算、authenticatedクライアントとsecurity-definer RPCの権限分離、全turnのusage確定後だけ精算するfinalized barrier、AndroidのTurnUsage作成と終了処理の競合修正を完了した。staging integrationでは料金境界、冪等精算、残高不足、所有者・管理列権限、並列精算、finalized usage遅着、content失敗非依存を確認し、Android終了競合はJava実スレッドテストで初期化中終了、作成直前終了、0 turn、fatal/manual同時終了、通常・再接続turnをPASSした。staging migrationは適用済み。本番Supabase・本番Edge Functionは未変更。残作業は正式料金、残高不足の事前予告・終了画面、古い空active callと既存pending callの日次回収であり、本番migration反映はリリース直前に行う。）
 
@@ -218,7 +220,8 @@
   - PR #28で完了: ホームから選択済みキャラの仮チャット画面へ遷移する土台を追加済み。ホームではメッセージ本文を表示せず、状態表示のみとする方針を反映済み。
   - 完了: PR #38（mainマージ済み、merge commit: `d0288bd86d3a49e3514ca49ed6bd9c42e719cacf`）で疑似LINE会話コアを実装し、staging実機確認済み（2026-07-12）: ユーザー発言の`chat_messages`保存、AI返信の生成・保存・時系列表示、返信成功時の1応答分コイン消費、AI返信失敗時のコイン非消費。stagingの`chat-reply`には`OPENAI_API_KEY`を設定済み。`20260712080000_fix_complete_chat_reply_balance_ambiguity.sql` はstaging適用済み。
   - 疑似LINE会話コアは開発中の確認完了扱い。本番Supabaseへの今回追加分の反映と本番実機確認はフェーズ4へ繰り越し、次工程を止めない。
-  - 完了: 通話終了後、逐語ログを含まない固定の通話見出しを`chat_messages`へ冪等に1件作成し、`calls.chat_header_message_id`へ紐づける。owner単位の永続outboxでpending保存後に再送し、開始失敗callでは作成しない。migration `20260715210000_add_call_summary_header.sql`はstaging未適用。
+  - 完了: PR #54（mainマージ済み、merge commit: `79809d36b94e43f5be46c14006d4685308de7425`）で、通話終了後に逐語ログを含まない固定の通話見出しを`chat_messages`へ冪等に1件作成し、`calls.chat_header_message_id`へ紐づける。owner単位の永続outboxでpending保存後に再送し、開始失敗callでは作成しない。migration `20260715210000_add_call_summary_header.sql`はstaging適用済み。Android staging AAB workflow run `29426984799`は成功した。
+  - 実装済み・staging未適用: 本文メッセージと通話見出しをピン留めできるUI、および本人所有行だけを更新する`set_chat_message_pinned` RPCを追加した。通話見出しの切替は対応する`calls.pinned`も同一トランザクションで同期する。migration `20260716100000_add_chat_history_pinning.sql`は作成済み。
   - 未完了: 通知タップ後の入口メッセージ。
 - [~] キャラ選択・オンボーディング（匿名セッション確立後に名前入力。氏名のみ必須。呼び方初期指定UIは作らない）
   - PR #28で完了: 名前入力、キャラ選択、人間6人 + AI猫 + ランダム猫の表示、ランダム猫の初回AIメイン選択不可表示、キャラ名自由入力、初回関係3択、初期行作成、完了後ホーム遷移を追加済み。
