@@ -1,6 +1,8 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.11 ／ 最終更新日: 2026-07-15**
+**版数: v5.12 ／ 最終更新日: 2026-07-15**
+
+（v5.12: PR #52をmainへマージ（merge commit: `cc01a9cca399f60b666e040f7417f3b554148906`）。通話コイン一括精算、authenticatedクライアントとsecurity-definer RPCの権限分離、全turnのusage確定後だけ精算するfinalized barrier、AndroidのTurnUsage作成と終了処理の競合修正を完了した。staging integrationでは料金境界、冪等精算、残高不足、所有者・管理列権限、並列精算、finalized usage遅着、content失敗非依存を確認し、Android終了競合はJava実スレッドテストで初期化中終了、作成直前終了、0 turn、fatal/manual同時終了、通常・再接続turnをPASSした。staging migrationは適用済み。本番Supabase・本番Edge Functionは未変更。残作業は正式料金、残高不足の事前予告・終了画面、古い空active callと既存pending callの日次回収であり、本番migration反映はリリース直前に行う。）
 
 （v5.11: PR #51をmainへマージ（merge commit: `3a4ed1b352ce5db31695eea6ff2a05f910f88294`）。通話コイン一括精算の仮料金として、`calls.billable_duration_ms`を60秒ごとに1コインへ切り上げ、1ms以上は最低2コイン、最大消費なしで計算する`settle_call_coins` RPCを追加した。`current_app_user_id()`で解決した`public.users.id`とcall所有者を照合し、`pending`だけをcall行・残高行lock下の1トランザクションで精算する。成功時は残高、`coin_transactions`、`coin_consumptions`、call状態を同時更新し、call単位のidempotency keyと`consumed_coin_id`で再実行時の二重減算・二重台帳を防ぐ。残高不足は残高を変えず`skipped/insufficient_balance`を1件記録し、0msは台帳を作らず空call回収対象の`pending`に残す。Solレビューblocker対応としてforward migration `20260715190000_harden_call_settlement_barrier.sql`を追加し、authenticatedの`calls`直接更新を`pinned`だけへ限定、作成列も`user_id`・`character_id`・`source`だけへ限定した。Androidは通話終了時に期待turn数とfinalized turn数を明示通知し、所有者付き永続outboxは全usage finalizedとpending保存の成功後だけ精算する。DBもcall行lock下で期待turn数とfinalized `call_logs`数を照合し、精算後の課金時間変更を拒否する。content再送失敗は精算を止めない。再レビューで見つかったAudioRecord初期化と終了barrierの競合は、TurnUsage作成と終了時finalize・completion snapshotを同じ`TurnUsageBarrier` monitorで直列化して修正した。終了開始後の新規usageを拒否し、初期化中終了、作成直前終了、0 turn、fatal/manual同時終了、通常・再接続turnを実スレッド自動テストでPASSした。両migrationをstagingへ適用し、0ms、59秒、60秒、61秒、120秒、121秒、他ユーザー拒否、管理4列の直接更新拒否、同一call 4並列精算、残高2コインでの別call同時精算、pending後のfinalized usage遅着、精算後usage更新拒否、content失敗非依存を一時データでPASSし、テストデータは削除した。正式料金、残高不足の事前予告、古い空active callと既存pending callの日次回収は未実装。本番Supabase・本番Edge Functionは未変更。）
 
