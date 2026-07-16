@@ -1,8 +1,16 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.14 ／ 最終更新日: 2026-07-16**
+**版数: v5.18 ／ 最終更新日: 2026-07-16**
 
-（v5.14: 疑似LINE履歴のピン留めを実装した。本文メッセージと通話見出しの各行にピン切替を追加し、`security definer`かつ固定`search_path`の`set_chat_message_pinned` RPCが`current_app_user_id()`で解決した`public.users.id`所有者だけの`chat_messages.pinned`を更新する。通話見出しでは同じトランザクション内で対応する本人所有`calls.pinned`も同期し、90日保持対象の両側を一致させる。`chat_messages`の広い直接UPDATE権限は戻さない。migration `20260716100000_add_chat_history_pinning.sql`は作成済み・staging未適用で、本番Supabase・本番Edge Functionは未変更。本人確認、行lock、権限限定、通話見出し同期、UIの失敗時復元を自動テストする。）
+（v5.18: PR #56のAAB `staging.1.0.24`で、owner付きpending callによる終了直後の再通話ブロックを実機PASSした。一方、開始拒否案内の専用モーダルを`renderChat()`の`</main>`後へ置き、上部配置を`position:fixed`だけに依存していたため、Android WebView実機では通常フローの画面末尾に表示された。該当文言を設定する経路が`callStartNotice`だけであることを確認し、専用モーダルのDOMを通話ボタンと同じ`chat-header`内部へ移した。CSSが適用される場合はボタン直下へabsolute配置し、固定配置に依存せずDOM構造上もチャット上部に残る。pending/settlement開始guard、仮料金、DB、migration、Edge Functionは変更せず、本番Supabase・本番Edge Functionも未変更。）
+
+（v5.17: PR #56のAAB `staging.1.0.23`実機再確認で、残高不足の開始拒否ロジック自体は動作する一方、案内が通話ボタンから見えない位置に出る問題と、残高上限終了直後にcompletion到達前の再開始が通る競合を確認した。終了処理の`markCallPending()`後、`callUsageComplete`到達前はowner付きpending outboxの`expectedTurnCount`が未確定でsettlement itemもまだ存在しないため、settlementだけを見る開始guardを通過していた。開始判定をowner所有pending call（expected未確定を含む）またはsettlementのいずれかが残る間は拒否する方式へ変更し、既存completion・settlement・一括精算フローは維持した。残高不足と前通話処理中の案内は通話ボタン付近へ固定した専用モーダルで表示する。開始判定ではDB残高、pending有無、settlement有無、判定結果を`call_balance_check`の`voiceDebug`へ記録する。DB、migration、Edge Function、仮料金、`settle_call_coins`は変更せず、本番Supabase・本番Edge Functionも未変更。）
+
+（v5.16: PR #56の実機確認で判明した通話再開始の2件を修正した。通話開始時は起動時・画面上の残高キャッシュを使わず、`current_app_user_id()`で既に解決済みの本人`public.users.id`を条件に`coin_balances`の最新行をDBから毎回取得し、call作成前に判定する。残高を使い切った通話の精算が永続outboxに残る間はDB反映前の残高で次のcallを作らず、owner単位のpending settlementとして開始を止める。残高不足、精算待ち、開始context不足、残高取得失敗の各経路を開始中guardの確実な解除と画面案内へ集約し、再起動後を含む無反応経路をなくした。既存`settle_call_coins`、仮料金、DB、migration、Edge Functionは変更せず、本番Supabase・本番Edge Functionも未変更。）
+
+（v5.15: 疑似電話の残高不足事前予告と終了画面を仮仕様で実装した。既存`settle_call_coins`と同じ仮料金（60秒1コイン・端数切り上げ・最低2コイン）から開始時残高で継続可能時間を求め、native usageのrevision別最新値を合算するOS共通`CallBalanceGuard`を追加した。ユーザーターンと通常AI音声再生中だけ残時間を進め、STT/LLM/TTS生成待ち、接続待ち、固定聞き返し中は進めない。Androidには同じ最大課金対象時間を渡し、録音・通常AI音声の各区間だけnative停止期限を設定することでWebView bridge遅延による課金境界超過を防ぐ。残り60秒未満で通話画面へ仮の予告を表示し、0で既存の終了・finalized barrier・一括精算経路へ一度だけ合流して、残高不足専用の仮終了画面を表示する。2コイン未満では新規call作成前に開始を止める。文言・閾値・正式料金はF1/F5で後決めとし、音声での残高不足案内は固定音声素材整備後にF5で決める残作業とする。精算規則・DB・migration・Edge Functionは変更せず、本番Supabase・本番Edge Functionも未変更。）
+
+（v5.14: 疑似LINE履歴のピン留めを実装した。本文メッセージと通話見出しの各行にピン切替を追加し、`security definer`かつ固定`search_path`の`set_chat_message_pinned` RPCが`current_app_user_id()`で解決した`public.users.id`所有者だけの`chat_messages.pinned`を更新する。通話見出しでは同じトランザクション内で対応する本人所有`calls.pinned`も同期し、90日保持対象の両側を一致させる。`chat_messages`の広い直接UPDATE権限は戻さない。PR #55はmainへマージ済み（merge commit: `4ce8ca24b13e17cd751f6296acda203c4bb33acf`）。migration `20260716100000_add_chat_history_pinning.sql`はstaging適用済みで、Android staging AAB workflow run `29428740970`は成功した。本番Supabase・本番Edge Functionは未変更。本人確認、行lock、権限限定、通話見出し同期、UIの失敗時復元を自動テストでPASSした。）
 
 （v5.13: 正本spec A7の未実装だった疑似電話後の通話見出し差し込みを実装した。終了済み本人callだけを対象に、security-definer RPC `create_call_summary_header`がcall行lock下で`message_type=call_summary_header`の固定見出しを1件だけ作成し、`calls.chat_header_message_id`へ紐づける。逐語ログは疑似LINEへ表示しない。owner単位の永続outboxでpending保存後に再送し、content保存・コイン精算とは独立させる。開始失敗callでは見出しを作らない。PR #54はmainへマージ済み（merge commit: `79809d36b94e43f5be46c14006d4685308de7425`）。migration `20260715210000_add_call_summary_header.sql`はstaging適用済みで、Android staging AAB workflow run `29426984799`は成功した。本番Supabase・本番Edge Functionは未変更。冪等作成、owner分離、オフライン復元、content失敗非依存、固定表示を自動テストでPASSした。）
 
@@ -282,7 +290,7 @@ PR #28/#29後の整理:
   - [x] PR #48: 同じ`call_id`の通話内だけで、確定・再生完了したuser/assistant発話を短期履歴として保持し、次ターンのAIへ時系列で渡す。上限は暫定で最大10往復・本文合計12,000文字（各発話最大1,200文字）で、超過時は古い通常会話から削除する。現在のユーザー発話は履歴に重複させず別のuser messageとして渡す。失敗・未完了・古い`turn_id`の結果は履歴化せず、通話終了または次の`call_id`開始時に破棄する。共通プロトコル土台とAndroid native→TypeScriptの非同期同期は自動テスト済み。staging Android実機では、短期記憶、近接センサーで画面消灯中も会話継続、画面復帰後の会話継続、回答速度に大きな悪化なしをPASSとして確認した。Android staging AAB 1016で判明した、activeへ昇格済みのstandby WebSocketをFunction側が`standby=true`のまま扱い2回目の`empty_completed`を誤分岐させる問題は、staging `voice-turn` version 11で修正した。修正後の同一通話で、1回目・2回目の異なる固定聞き返し音声と各録音再開、2回目に「聞き取り中」で停止しないこと、3回目の案内音声と「もう一度試す」「通話を終了」の表示、手動再試行後の録音再開と通常AI会話復帰をすべてPASSとして確認し、PR #48の対象範囲は実機確認完了とする。通話コイン消費は未実装であり、PR #48には含めない。
   - staging実機確認済み: 通話時間5分29.025秒、成功15ターン、途中エラーなし。150秒を超える継続通話を確認。staging `voice-turn` version 6 ACTIVE、staging AABで確認済み。
   - 本番Edge Function反映と本番総合実機確認はフェーズ4へ繰り越す。
-  - 残り: 通話コインの正式料金・残高不足予告・異常終了回収、通話ログ全仕様、アプリ内疑似着信、モーニング／イベント経由の通話導線、iOS疑似電話。これらが未完了のため疑似電話全体は`[~]`を維持する。
+  - 残り: 通話コインの正式料金・異常終了回収、通話ログ全仕様、アプリ内疑似着信、モーニング／イベント経由の通話導線、iOS疑似電話。これらが未完了のため疑似電話全体は`[~]`を維持する。
     - [x] 通話コイン消費の第1段階: ユーザーターンの録音開始から終了確定までをmonotonic clockで計測し、AI通常回答音声は端末の実再生時間だけを複数チャンク合算する。固定の聞き返し音声・エラー案内音声を音声種別で除外し、終了・途中停止時も同じturnの計測を一度だけ確定する。
     - [x] OS共通のusageイベントとTypeScript記録サービスを追加し、`(call_id, turn_id)`・revision単位で古い更新を無視する。DB保存は次ターン開始を待たせず、通信失敗時は永続outboxへ保持して次回起動時に再送する。将来iOSは同じイベントpayloadへ接続する。
     - [x] stagingへmigration `20260714150000_add_call_usage_recording.sql` を適用。`calls`の合計時間・未精算状態と`call_logs`のターン別時間を追加し、本文保存と計測保存を同じ行へupsertするsecurity-definer RPCを実装した。`current_app_user_id()`による所有者確認、revision冪等性、非負制約、権限制限を含む。
@@ -296,7 +304,8 @@ PR #28/#29後の整理:
     - [x] 通話終了時の仮料金一括精算: `billable_duration_ms`を60秒ごとに1コインへ切り上げ、1ms以上は最低2コイン、最大消費なしとする。`settle_call_coins`は`pending`かつ本人所有のcallだけを1トランザクションで精算し、残高・transaction・consumption・call状態を同時更新する。0msは0コインで台帳を作らず、空call回収対象として`pending`に残す。正式料金はF1/F2で別途決定する。
     - [x] 正常終了の再送・冪等性: 所有者付き永続outboxはAndroidの通話終了イベントが示す期待turn数・finalized turn数を保持し、全usage finalizedとpending保存が成功した後だけ精算RPCを送る。TurnUsage作成と終了時finalize・completion snapshotは同じmonitorで直列化し、終了開始後の新規usageを禁止する。AudioRecord初期化中終了、作成直前終了、0 turn、fatal/manual同時終了、通常・再接続turnの実スレッド自動テストをPASSした。DBもcall行lock下で期待turn数とfinalized `call_logs`数の一致を必須にし、精算後の課金時間変更をtriggerで拒否する。content outboxは精算条件から分離し、保存失敗中も独立して再送する。call単位のidempotency key、call行lock、残高行lock、`consumed_coin_id`により、同じcallの4並列実行でも減算・transaction・consumption各1回をstagingでPASSした。
     - [x] calls課金列の権限分離: forward migration `20260715190000_harden_call_settlement_barrier.sql`でauthenticatedの直接作成列を`user_id`・`character_id`・`source`、直接更新列を`pinned`だけに限定した。`billable_duration_ms`、`settlement_status`、`settled_at`、`consumed_coin_id`の直接更新拒否と、既存security-definer usage・pending・settlement RPCの継続動作をstagingでPASSした。
-    - [x] 残高不足: 残高をマイナスにせず減算・transaction作成を行わない。`coin_consumptions`へ`skipped/insufficient_balance`を1件だけ記録し、再実行でも増やさない。残高2コインで2コイン必要な別callを同時精算し、片方だけsettled、片方はinsufficient、残高0、合計減算2コインをstagingでPASSした。残高不足の事前予告と終了画面表示は未実装。
+    - [x] 残高不足: 残高をマイナスにせず減算・transaction作成を行わない。`coin_consumptions`へ`skipped/insufficient_balance`を1件だけ記録し、再実行でも増やさない。残高2コインで2コイン必要な別callを同時精算し、片方だけsettled、片方はinsufficient、残高0、合計減算2コインをstagingでPASSした。
+    - [x] 残高不足の事前予告・終了画面（仮仕様）: 開始時残高を仮料金の継続可能時間へ換算し、native usageの最新revisionをturn別に合算する。ユーザーターンと通常AI音声再生中だけ残時間を進め、Androidも各課金対象区間へnative停止期限を設定する。残り60秒未満で仮文言の予告を表示、0で既存の終了outbox・finalized barrier・一括精算へ合流し、残高不足の仮終了画面を表示する。2コイン未満はcall作成前に開始しない。正式料金、予告閾値、文言、終了画面内容はF1/F5で後決めする。音声での残高不足案内は今回対象外で、固定音声素材整備後にF5で決める。
     - [ ] 強制終了・異常切断・通信断で通常の終了outbox自体が作られなかったcall、および既存の`pending` callを保存済み記録から日次回収して精算する。回収処理も同じ`settle_call_coins`を利用し、二重減算を防止する。
     - 現在存在するAndroid疑似電話で先行実装・実機確認し、将来のiOS疑似電話も同じOS共通の計算・精算方式へ接続する。Androidだけで完結する業務ルールにはしない。
 
