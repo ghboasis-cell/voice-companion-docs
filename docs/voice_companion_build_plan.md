@@ -1,6 +1,8 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.23 ／ 最終更新日: 2026-07-16**
+**版数: v5.24 ／ 最終更新日: 2026-07-16**
+
+（v5.24: specをv4.5へ更新してA8-2を新設し、その先行範囲としてアプリ内疑似着信の事前接続、ユーザー発信コール音、マナーモード追従を実装した。着信画面表示後は認証sessionと対象キャラだけでAndroid nativeの`standby=1` WebSocketを準備し、録音、usage、課金、`calls`作成は行わない。応答後に既存の最新残高・owner付きpending・session・call作成・マイク権限確認を通過した場合、同じstandby socketをactiveへ昇格して録音を開始する。準備中または準備済みsocketが失敗・終了していれば既存の通常接続へfallbackする。拒否・画面離脱・開始拒否時は準備socketを閉じ、DB書込を残さない。ユーザー発信では開始判定通過後からnativeのSTT ready通知までコール音を鳴らし、接続確立・失敗・終了で停止する。Androidの着信音・コール音は`AudioManager.getRingerMode()`に従い、通常はring stream合成音+バイブ、バイブモードはバイブのみ、サイレントは無音とする。固定第一声は`fixed_voice_assets`工程、本番音源差し替えはF6へ残し、今回は実装しない。DB migration、Supabase、Edge Function、productionは変更しない。）
 
 （v5.23: PR #59のAndroid staging実機確認で、疑似着信画面・拒否・応答はPASSした一方、Web Audio合成着信音が無音だった。従来実装はAndroid WebView上で`AudioContext.resume()`の完了を待たずにoscillatorを予約しており、ユーザー操作の有効範囲を外れてcontextが`suspended`のままになると音声時刻が進まない。AndroidではWebViewの自動再生制約に依存しないCapacitor native pluginへ切り替え、`ToneGenerator`のring streamで二音を2.2秒間隔で反復する。応答・拒否・画面離脱・plugin破棄時はcallbackを除去してtoneを停止・解放し、多重再生を防ぐ。アプリ内foreground着信のためForeground Service、通知権限、外部音源素材は追加せず、browserは既存Web Audioをfallbackとして維持する。DB migration、Supabase、Edge Function、productionは変更しない。）
 
@@ -319,6 +321,7 @@ PR #28/#29後の整理:
     - [x] 終了outboxなしcall・既存pending callの日次回収: 全turnのrevision付きfinalized usageがDBに保存済みで、既存expected件数とも矛盾しないcallだけ、保存済み`call_logs`から合計時間・expected件数・終了barrierを復元する。content-only、未finalized、件数不一致、最終活動から24時間以内は推測せず翌日再試行する。authenticatedの`settle_call_coins`とservice-only日次回収は同じowner照合・call/残高row lock・call単位idempotency keyの精算coreを利用し、残高不足規則と仮料金を変えず二重減算・二重台帳を防ぐ。migration `20260716190000_add_abnormal_call_daily_recovery.sql`はstaging適用済み。usage計測導入前で全ログrevision 0のlegacy callは、forward migration `20260716200000_recover_legacy_unmetered_calls.sql`が指定UTC境界・owner・0ms・状態条件を満たす場合だけ、推測課金と台帳作成なしで一度限りterminal化する。legacy forward migrationはstaging未適用。
     - [x] 通話ログ全仕様: 正常ターンの確定user transcriptとassistant textを`done`時点で保存し、AI音声全再生完了を待つ短期履歴とは分離する。content revision付きowner別永続outboxと所有者確認RPCにより、再送・後着・重複でも同じ`(call_id, turn_id)`行を維持する。ターン別の録音開始・終了・経過時間、通常AI音声の実再生時間に加え、VAD終了理由、応答生成時刻、通常AI音声開始時刻、本文確定状態を日次処理用に保存する。STT confidenceは値が提供されるまでNULL、音声ファイルは任意仕様のため未保存とする。`call_summaries`生成と本文削除の日次処理自体は記憶パイプラインの別工程とする。
     - [x] アプリ内疑似着信: 特別イベントでユーザーが事前にOKした後のforeground画面として、キャラ名・画像枠・着信状態・応答・拒否を表示する。応答は`special_event`開始元を保存しつつ既存の残高・未精算・セッション・native開始guardへ合流し、拒否はcallを作らず閉じる。アプリ内着信音は小音量の短い合成音とし、応答・拒否・画面離脱で停止する。イベント判定と通知起動は別工程で、当面の確認トリガーはdev/stagingの選択済みキャラのチャットだけに表示する。
+    - [x] A8-2接続・音の先行実装: 着信画面中にcall未作成・録音未開始でstandby WebSocketを準備し、応答後の既存開始guard通過時だけ同じsocketをactiveへ昇格する。拒否と開始拒否ではsocketを破棄する。ユーザー発信は接続readyまでコール音を鳴らす。Androidの着信音・コール音・バイブは通常／バイブ／サイレントのringer modeへ従う。固定第一声は`fixed_voice_assets`工程、本番音源はF6で差し替える残作業とする。
     - 現在存在するAndroid疑似電話で先行実装・実機確認し、将来のiOS疑似電話も同じOS共通の計算・精算方式へ接続する。Androidだけで完結する業務ルールにはしない。
 
 ### 疑似電話の会話品質: 確認済み・未解決の事実
