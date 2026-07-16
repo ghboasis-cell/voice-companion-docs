@@ -1,6 +1,8 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.20 ／ 最終更新日: 2026-07-16**
+**版数: v5.21 ／ 最終更新日: 2026-07-16**
+
+（v5.21: spec E2/D15の通話ログ保存仕様を完了した。従来は`callTurnCommitted`がAI音声の全再生完了後にだけ本文を保存していたため、確定応答後から再生完了までの異常終了で日次処理用の本文を失う差分があった。AndroidはLLM/TTS正常完了の`done`受信時に確定user transcriptとassistant textを専用`callTurnContentFinalized`イベントへ出し、短期履歴の再生完了条件とは分離する。owner付き永続outboxはcontent revisionで重複・古い更新を除外し、通常AI音声の実再生開始が後着した場合も同じturnを新revisionで補完する。forward migration `20260716210000_complete_call_log_storage.sql`は、`content_revision`・`content_finalized`を追加し、`current_app_user_id()`による`public.users.id`所有者確認、call行lock、固定`search_path`、authenticated限定の拡張`upsert_call_turn_content`で、本文、VAD終了理由、応答生成時刻、通常AI音声開始時刻をusageと同じ`call_logs`行へ冪等保存する。現STTプロトコルにconfidence値はないため推測せずNULLとし、音声ファイル保存はspecどおり任意のため未追加とする。旧4引数RPCは既存アプリ互換として維持する。`should_delete_after_daily_processing`等、将来の`call_summaries`生成・本文削除に必要な既存列を確認したが、日次生成・削除処理そのものは別工程とする。migrationは作成のみでstaging未適用、本番Supabase・本番Edge Functionは未変更。）
 
 （v5.20: PR #57のmigration `20260716190000_add_abnormal_call_daily_recovery.sql`をstagingへ適用して回収を確認したところ、usage計測migration導入前のlegacy call 12件が、本文用`call_logs`を持つ一方で全行`usage_revision=0`・`usage_finalized=false`のため、`skipped_usage_incomplete`を繰り返すことを確認した。forward migration `20260716200000_recover_legacy_unmetered_calls.sql`を追加し、`created_at < 2026-07-14 15:00:00 UTC`、`settlement_status in (unrecorded, recording)`、`billable_duration_ms=0`、ownerあり、全`call_logs.usage_revision=0`をすべて満たすcallだけを一度限り`cancelled`・精算完了へ移す。保存されていない課金時間は推測せず、残高、`coin_transactions`、`coin_consumptions`を変更しない。境界時刻以後、pending/settled/failed、1ms以上、ownerなし、revision 1以上を1件でも持つcallは対象外とする。legacy forward migrationは作成のみでstaging未適用、本番Supabase・本番Edge Functionは未変更。）
 
@@ -294,7 +296,7 @@ PR #28/#29後の整理:
   - [x] PR #48: 同じ`call_id`の通話内だけで、確定・再生完了したuser/assistant発話を短期履歴として保持し、次ターンのAIへ時系列で渡す。上限は暫定で最大10往復・本文合計12,000文字（各発話最大1,200文字）で、超過時は古い通常会話から削除する。現在のユーザー発話は履歴に重複させず別のuser messageとして渡す。失敗・未完了・古い`turn_id`の結果は履歴化せず、通話終了または次の`call_id`開始時に破棄する。共通プロトコル土台とAndroid native→TypeScriptの非同期同期は自動テスト済み。staging Android実機では、短期記憶、近接センサーで画面消灯中も会話継続、画面復帰後の会話継続、回答速度に大きな悪化なしをPASSとして確認した。Android staging AAB 1016で判明した、activeへ昇格済みのstandby WebSocketをFunction側が`standby=true`のまま扱い2回目の`empty_completed`を誤分岐させる問題は、staging `voice-turn` version 11で修正した。修正後の同一通話で、1回目・2回目の異なる固定聞き返し音声と各録音再開、2回目に「聞き取り中」で停止しないこと、3回目の案内音声と「もう一度試す」「通話を終了」の表示、手動再試行後の録音再開と通常AI会話復帰をすべてPASSとして確認し、PR #48の対象範囲は実機確認完了とする。通話コイン消費は未実装であり、PR #48には含めない。
   - staging実機確認済み: 通話時間5分29.025秒、成功15ターン、途中エラーなし。150秒を超える継続通話を確認。staging `voice-turn` version 6 ACTIVE、staging AABで確認済み。
   - 本番Edge Function反映と本番総合実機確認はフェーズ4へ繰り越す。
-  - 残り: 通話コインの正式料金・異常終了回収、通話ログ全仕様、アプリ内疑似着信、モーニング／イベント経由の通話導線、iOS疑似電話。これらが未完了のため疑似電話全体は`[~]`を維持する。
+  - 残り: 通話コインの正式料金、アプリ内疑似着信、モーニング／イベント経由の通話導線、iOS疑似電話。これらが未完了のため疑似電話全体は`[~]`を維持する。
     - [x] 通話コイン消費の第1段階: ユーザーターンの録音開始から終了確定までをmonotonic clockで計測し、AI通常回答音声は端末の実再生時間だけを複数チャンク合算する。固定の聞き返し音声・エラー案内音声を音声種別で除外し、終了・途中停止時も同じturnの計測を一度だけ確定する。
     - [x] OS共通のusageイベントとTypeScript記録サービスを追加し、`(call_id, turn_id)`・revision単位で古い更新を無視する。DB保存は次ターン開始を待たせず、通信失敗時は永続outboxへ保持して次回起動時に再送する。将来iOSは同じイベントpayloadへ接続する。
     - [x] stagingへmigration `20260714150000_add_call_usage_recording.sql` を適用。`calls`の合計時間・未精算状態と`call_logs`のターン別時間を追加し、本文保存と計測保存を同じ行へupsertするsecurity-definer RPCを実装した。`current_app_user_id()`による所有者確認、revision冪等性、非負制約、権限制限を含む。
@@ -311,6 +313,7 @@ PR #28/#29後の整理:
     - [x] 残高不足: 残高をマイナスにせず減算・transaction作成を行わない。`coin_consumptions`へ`skipped/insufficient_balance`を1件だけ記録し、再実行でも増やさない。残高2コインで2コイン必要な別callを同時精算し、片方だけsettled、片方はinsufficient、残高0、合計減算2コインをstagingでPASSした。
     - [x] 残高不足の事前予告・終了画面（仮仕様）: 開始時残高を仮料金の継続可能時間へ換算し、native usageの最新revisionをturn別に合算する。ユーザーターンと通常AI音声再生中だけ残時間を進め、Androidも各課金対象区間へnative停止期限を設定する。残り60秒未満で仮文言の予告を表示、0で既存の終了outbox・finalized barrier・一括精算へ合流し、残高不足の仮終了画面を表示する。2コイン未満はcall作成前に開始しない。正式料金、予告閾値、文言、終了画面内容はF1/F5で後決めする。音声での残高不足案内は今回対象外で、固定音声素材整備後にF5で決める。
     - [x] 終了outboxなしcall・既存pending callの日次回収: 全turnのrevision付きfinalized usageがDBに保存済みで、既存expected件数とも矛盾しないcallだけ、保存済み`call_logs`から合計時間・expected件数・終了barrierを復元する。content-only、未finalized、件数不一致、最終活動から24時間以内は推測せず翌日再試行する。authenticatedの`settle_call_coins`とservice-only日次回収は同じowner照合・call/残高row lock・call単位idempotency keyの精算coreを利用し、残高不足規則と仮料金を変えず二重減算・二重台帳を防ぐ。migration `20260716190000_add_abnormal_call_daily_recovery.sql`はstaging適用済み。usage計測導入前で全ログrevision 0のlegacy callは、forward migration `20260716200000_recover_legacy_unmetered_calls.sql`が指定UTC境界・owner・0ms・状態条件を満たす場合だけ、推測課金と台帳作成なしで一度限りterminal化する。legacy forward migrationはstaging未適用。
+    - [x] 通話ログ全仕様: 正常ターンの確定user transcriptとassistant textを`done`時点で保存し、AI音声全再生完了を待つ短期履歴とは分離する。content revision付きowner別永続outboxと所有者確認RPCにより、再送・後着・重複でも同じ`(call_id, turn_id)`行を維持する。ターン別の録音開始・終了・経過時間、通常AI音声の実再生時間に加え、VAD終了理由、応答生成時刻、通常AI音声開始時刻、本文確定状態を日次処理用に保存する。STT confidenceは値が提供されるまでNULL、音声ファイルは任意仕様のため未保存とする。`call_summaries`生成と本文削除の日次処理自体は記憶パイプラインの別工程とする。
     - 現在存在するAndroid疑似電話で先行実装・実機確認し、将来のiOS疑似電話も同じOS共通の計算・精算方式へ接続する。Androidだけで完結する業務ルールにはしない。
 
 ### 疑似電話の会話品質: 確認済み・未解決の事実
