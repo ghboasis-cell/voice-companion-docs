@@ -1,6 +1,8 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.25 ／ 最終更新日: 2026-07-18**
+**版数: v5.26 ／ 最終更新日: 2026-07-18**
+
+（v5.26: フェーズ3のPR #48行に、mainマージ済み(2026-07-14、merge commit: `1e3bb3d35179eb62216895c749068ebdcd14ec22`)を追記した。文書のみで、コード・DB・Supabase・Edge Function・productionは変更しない。）
 
 （v5.25: specをv4.6へ更新し、疑似電話のTTSをクラウドTTS(Aivis)からオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX/桜音)へ採用決定した内容を反映した。TTS従量課金では採算が成立しないための構造判断であり、`poc/on-device-tts`ブランチのPoC実験フェーズは終了・採用決定済み(実測: 1文目再生 約0.9〜1.0秒、INT8音質劣化なし)。TTS本体・DeBERTa BERTともに動的INT8、量子化・検証はローカル禁止でstaging AAB workflowのCI内実行、文末単位ストリーミング再生(読点分割は不採用)、声モデルは初期同梱せずキャラ選択時にCloudflare R2からDL、ライセンス文書同梱、本実装はSTT/LLM/TTS/再生の区間別フリーズログを含む。当面の作業順序は「仕様書反映 → PR #48決着 → オンデバイスTTS本実装(フリーズログ込み) → フリーズバグ対応」とする。実験記録として`poc/on-device-tts`ブランチと`poc/notes.md`は保持する。本更新は文書のみで、コード・DB migration・Supabase・Edge Function・productionは変更しない。）
 
@@ -302,7 +304,7 @@ PR #28/#29後の整理:
 - [~] 疑似電話（A5）
   - 完了: PR #46（mainマージ済み、merge commit: `9006dbfd31d53111897b872eaedefbf8b7eee087`）で、疑似LINEの通話ボタンからユーザー発信の疑似電話を開始し、Androidネイティブ `AudioRecord`（24kHz / mono / PCM16）→ STT → LLM → Aivis TTS → 音声再生を複数ターン継続できる通話画面を実装。
   - 完了: 1ターン1 WebSocket＋次ターン先行接続。AI音声再生中に次ターン接続を`ready`まで準備し、再生終了後に接続を昇格して録音を開始する。通話画面と`call_id`は通話終了まで維持し、接続ごとの`turn_id`で古い接続イベントを無視する。
-  - [x] PR #48: 同じ`call_id`の通話内だけで、確定・再生完了したuser/assistant発話を短期履歴として保持し、次ターンのAIへ時系列で渡す。上限は暫定で最大10往復・本文合計12,000文字（各発話最大1,200文字）で、超過時は古い通常会話から削除する。現在のユーザー発話は履歴に重複させず別のuser messageとして渡す。失敗・未完了・古い`turn_id`の結果は履歴化せず、通話終了または次の`call_id`開始時に破棄する。共通プロトコル土台とAndroid native→TypeScriptの非同期同期は自動テスト済み。staging Android実機では、短期記憶、近接センサーで画面消灯中も会話継続、画面復帰後の会話継続、回答速度に大きな悪化なしをPASSとして確認した。Android staging AAB 1016で判明した、activeへ昇格済みのstandby WebSocketをFunction側が`standby=true`のまま扱い2回目の`empty_completed`を誤分岐させる問題は、staging `voice-turn` version 11で修正した。修正後の同一通話で、1回目・2回目の異なる固定聞き返し音声と各録音再開、2回目に「聞き取り中」で停止しないこと、3回目の案内音声と「もう一度試す」「通話を終了」の表示、手動再試行後の録音再開と通常AI会話復帰をすべてPASSとして確認し、PR #48の対象範囲は実機確認完了とする。通話コイン消費は未実装であり、PR #48には含めない。
+  - [x] PR #48: 同じ`call_id`の通話内だけで、確定・再生完了したuser/assistant発話を短期履歴として保持し、次ターンのAIへ時系列で渡す。上限は暫定で最大10往復・本文合計12,000文字（各発話最大1,200文字）で、超過時は古い通常会話から削除する。現在のユーザー発話は履歴に重複させず別のuser messageとして渡す。失敗・未完了・古い`turn_id`の結果は履歴化せず、通話終了または次の`call_id`開始時に破棄する。共通プロトコル土台とAndroid native→TypeScriptの非同期同期は自動テスト済み。staging Android実機では、短期記憶、近接センサーで画面消灯中も会話継続、画面復帰後の会話継続、回答速度に大きな悪化なしをPASSとして確認した。Android staging AAB 1016で判明した、activeへ昇格済みのstandby WebSocketをFunction側が`standby=true`のまま扱い2回目の`empty_completed`を誤分岐させる問題は、staging `voice-turn` version 11で修正した。修正後の同一通話で、1回目・2回目の異なる固定聞き返し音声と各録音再開、2回目に「聞き取り中」で停止しないこと、3回目の案内音声と「もう一度試す」「通話を終了」の表示、手動再試行後の録音再開と通常AI会話復帰をすべてPASSとして確認し、PR #48の対象範囲は実機確認完了とする。通話コイン消費は未実装であり、PR #48には含めない。mainマージ済み(2026-07-14、merge commit: `1e3bb3d35179eb62216895c749068ebdcd14ec22`)。
   - staging実機確認済み: 通話時間5分29.025秒、成功15ターン、途中エラーなし。150秒を超える継続通話を確認。staging `voice-turn` version 6 ACTIVE、staging AABで確認済み。
   - 本番Edge Function反映と本番総合実機確認はフェーズ4へ繰り越す。
   - 残り: 通話コインの正式料金、モーニング／イベント経由の通話導線、iOS疑似電話。これらが未完了のため疑似電話全体は`[~]`を維持する。
