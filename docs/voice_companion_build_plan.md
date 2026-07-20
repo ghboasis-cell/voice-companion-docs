@@ -1,10 +1,32 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.26 ／ 最終更新日: 2026-07-18**
+**版数: v5.37 ／ 最終更新日: 2026-07-18**
 
-（v5.26: フェーズ3のPR #48行に、mainマージ済み(2026-07-14、merge commit: `1e3bb3d35179eb62216895c749068ebdcd14ec22`)を追記した。文書のみで、コード・DB・Supabase・Edge Function・productionは変更しない。）
+（v5.37: 正本 voice-companion-docs のドキュメント2件(オンデバイスTTS採用反映=旧spec v4.6/build_plan v5.25、PR #48 mainマージ状態記録=旧build_plan v5.26)を当リポジトリのドキュメントへ統合した。具体的には、フェーズ0の声モデル項へTTS方式決定を追記、疑似電話のPR #48行へmainマージ済み(2026-07-14、merge commit `1e3bb3d35179eb62216895c749068ebdcd14ec22`)を追記、「オンデバイスTTS本実装(採用決定・2026-07-18)」節を新設、Z-6を更新した。specはv4.7へ統合済み(iOSネイティブ録音反映とオンデバイスTTS採用を併存)。当リポジトリの既存v5.25/v5.26(iOS疑似電話関連)と版数が衝突するため、統合版をv5.37とした。オンデバイスTTSはv1の6キャラ全員が対象で、桜音は方式・量子化・配信の検証基準モデルとして用いる(桜音1モデルに絞る前提にはしない)。本更新は文書のみで、コード・DB migration・Supabase・Edge Function・productionは変更しない。）
 
-（v5.25: specをv4.6へ更新し、疑似電話のTTSをクラウドTTS(Aivis)からオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX/桜音)へ採用決定した内容を反映した。TTS従量課金では採算が成立しないための構造判断であり、`poc/on-device-tts`ブランチのPoC実験フェーズは終了・採用決定済み(実測: 1文目再生 約0.9〜1.0秒、INT8音質劣化なし)。TTS本体・DeBERTa BERTともに動的INT8、量子化・検証はローカル禁止でstaging AAB workflowのCI内実行、文末単位ストリーミング再生(読点分割は不採用)、声モデルは初期同梱せずキャラ選択時にCloudflare R2からDL、ライセンス文書同梱、本実装はSTT/LLM/TTS/再生の区間別フリーズログを含む。当面の作業順序は「仕様書反映 → PR #48決着 → オンデバイスTTS本実装(フリーズログ込み) → フリーズバグ対応」とする。実験記録として`poc/on-device-tts`ブランチと`poc/notes.md`は保持する。本更新は文書のみで、コード・DB migration・Supabase・Edge Function・productionは変更しない。）
+（v5.36: iOS初回応答遅延をAndroidユーザー発信経路と再照合し、ユーザー操作後に古い着信準備の破棄完了を最大2秒待つ直列経路、古いprepare結果から新しい発信standbyを破棄し得る遅着cancel、iOSだけが`AVAudioPlayer`生成と`prepareToPlay()`を通話状態queue上で同期実行する差を確認した。計測開始をDOMの開始操作guard先頭へ移し、試行IDで二重開始・失敗・遅着eventを分離した。ユーザー発信は古いcleanupを待たずnative state queue上のstandby置換とDB guardを並行し、古いprepare結果はgenerationで破棄する。iOS player準備はAndroidの`prepareAsync()`と同じく状態管理から分離し、`first_audio_received` / `first_audio_player_ready` / `first_audio_play_invoked` / 再生clock進行後の`first_audio_play_started`を両OS診断へ追加した。再生API成功前の課金開始、usage、精算、Android通話状態機械は変更していない。`npm test` 166件、`npx tsc --noEmit`、`npm run build`、`npx cap sync ios`、`git diff --check`をPASSした。iOS実機は未検証、TestFlight/Codemagicビルドは未実施、productionは未変更。）
+
+（v5.35: Android通話のaudio focus変化を、`AUDIOFOCUS_LOSS` / `AUDIOFOCUS_LOSS_TRANSIENT`だけ安全終了の対象とし、通知音やナビ音声が要求する`AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK`は音量操作も終了処理も行わず通話を継続するよう修正した。iOSの`AVAudioSession` interruption処理、自動復帰、DB migration、Supabase、Edge Function、productionは変更しない。）
+
+（v5.34: Android実機PASS済みの通話状態機械を基準に、iOSへSTT連続失敗回数・回復音声完了待ち・standby昇格・3回目手動復旧、ターン未進行時だけの自動再接続、再接続失敗時のusage確定と全解放、再生成功後だけの課金開始、chunk再生失敗処理、確定・再生済みturnだけの短期履歴を移植した。iOS通話中のidle timer・近接監視・plugin破棄・本体受話口/スピーカー限定をAndroidと揃え、両OSで音声割り込みを検出した場合は自動復帰せず安全終了して共通outbox・一括精算へ合流する。Bluetooth通話対応と割り込み後の自動復帰は将来課題とする。DB migration、Supabase、Edge Function、productionは変更しない。）
+
+（v5.33: iOS初回応答遅延の開始経路をAndroidと比較し、ユーザー発信では両OSともDB outbox照合・残高確認・call作成と並行して`standby=1` WebSocketを先行接続し、native開始時に昇格する構成へ統一した。iOS固有でWebSocket `ready`後に直列実行していた`AVAudioSession`のcategory設定・activateを接続待ちと並行する先行準備へ移し、接続と音声セッションの両方がreadyになり次第録音を開始する。staging診断には通話開始押下を基準とするoutbox・残高・call作成・`audio_session_ready`・`ws_connected`・`recording_started`・`first_transcript`・`first_reply_text`・`first_audio_started`の経過msをOS共通で追加した。usage、合図音、outbox回復、精算・課金規則は変更しない。）
+
+（v5.32: 修正前の実機に永続化された通話usage outboxを、起動時とユーザー発信・疑似着信応答の開始前に本人所有callのDB状態と照合する自己回復を追加した。精算済み・不存在・所有不整合はローカル残留を除去し、通信失敗は保持、24時間超の`pending`はサーバ精算を再試行し、未解決は無条件削除せず既存の日次異常call回収へ委ねる。B3の二重消費防止のため着信応答も共通精算guardを維持し、staging診断にoutbox件数・状態・作成時刻を表示する。あわせて全画面の上部ヘッダーを表示専用にし、チャットの戻る・通話開始、通話中の出力切替・赤い終了ボタンを下部操作エリアへ移した。）
+
+（v5.31: iOS WebViewのsafe area取得が0となる場合にもノッチ・ステータスバー内へ上部操作が入らないよう、`viewport-fit=cover`を維持したままiOS専用の上端最小退避と全画面共通insetを追加した。AI音声再生後はiOS/Androidとも、低音量の録音準備完了合図を課金音声キュー外で1回鳴らし、合図音の再生・解放完了後だけマイク録音を開始してSTTへの回り込みを防ぐ。）
+
+（v5.30: iOS疑似着信の拒否とstandby準備完了・ユーザー発信開始の競合を解消し、遅着prepareの再破棄、破棄完了待ち、2秒タイムアウト、native側の無条件状態初期化により、拒否後の発信が誤った前通話処理中状態へ入らないようにした。）
+
+（v5.29: Xcode 26 SDKの`UIRequiresFullScreen`廃止に伴い、Info.plistの全4方向宣言と実行時コードによる縦固定へ移行し、ビルド実行条件の運用ルール3項を追加した。）
+
+（v5.28: App Store ConnectのITMS-90474再発防止として、iOS AppターゲットのDebug/ReleaseをiPhone専用・portrait専用・`UIRequiresFullScreen=true`へ一本化し、staging/productionのIPA作成後に埋め込みInfo.plistの`UIDeviceFamily=[1]`とportraitのみを提出前検査する。）
+
+（v5.27: iOS版A8-2として、既存のアプリ内疑似着信画面をiOSでも有効化し、着信中にcall未作成・録音未開始・usage/課金未開始の`standby=1` WebSocketを準備する。応答後は既存の最新残高、owner付きpending、session、call作成、マイク権限の共通guardを通過した場合だけ同じsocketをactiveへ昇格し、拒否・画面離脱・開始拒否では準備接続を破棄してDBへ痕跡を残さない。iOS nativeの`IOSCallSignalPlugin`は外部音源やTTSを使わずPCM合成した着信音・コール音を`AVAudioPlayer`で再生し、応答・拒否・接続ready・離脱時にtimerとplayerを停止する。`.ambient` audio sessionにより着信音・コール音はiOSのサイレントスイッチへ従い、着信バイブは`AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)`へ委譲する。iOSにはサイレントスイッチ状態や「バイブのみ」と「完全サイレント」を判別する公開APIがないため、音は確実にswitchへ従わせ、バイブの実動作は端末のシステム設定に従う範囲とする。ユーザー発信・着信応答とも既存TypeScriptのusage、owner outbox、ログ、一括精算、残高判定を共有し、iOS専用の課金・所有者・精算規則は追加しない。固定第一声は`fixed_voice_assets`、本番音源差し替えはF6、イベント発生・通知起動は別工程のままとする。DB migration、Supabase、Edge Function、productionは変更しない。）
+
+（v5.26: PR #61のiOS疑似電話実機ビルド前検証として、`voice-turn`のactive WebSocket接続失敗時にAndroidと同じ最大1回の自動再接続を追加した。失敗turnのusageを確定し、録音・再生・active/standby接続を解放してから500ms待ち、新しいturnで接続し直す。自動再接続も失敗した場合だけ従来の`recoverable=true`を通知し、「もう一度試す」による手動再接続、usage finalized、課金・精算規則は変更しない。iPhone/iPadの対応方向をportraitだけへ限定し、Capacitor view controllerも回転を拒否する。iOS native通話開始時に`UIDevice.isProximityMonitoringEnabled`を有効化し、手動終了、残高終了、fatal、開始状態リセット、WebView離脱から合流する`stopResources`とplugin解放時に必ず無効化する。DB migration、Supabase、Edge Function、productionは変更しない。）
+
+（v5.25: specをv4.6へ更新し、iOS疑似電話の第1段階としてユーザー発信通話を実装した。iOS 15以上の標準APIだけで完結する`AVAudioEngine`を採用し、端末の入力形式から`AVAudioConverter`で24kHz / mono / PCM16へ変換して既存`voice-turn`へbinary送信する。外部音声SDKやWebView `getUserMedia()`を使わず、`AVAudioSession`の`playAndRecord` / `voiceChat`に録音とAI音声再生を集約するため、Androidと同じWebView通話画面を維持しながら端末音声処理をnativeへ閉じられる。1ターン1 WebSocket、再生中の次turn standby、VAD、確定本文、短期履歴、実再生時間、終了barrierをiOS nativeで扱い、`call-protocol.json`から生成した`GeneratedCallProtocol.swift`の`turnCommitted` / `turnContentFinalized` / `usageUpdated` / `usageComplete` / `fatalError`をAndroidと同じpayloadで通知する。残高判定、owner付き永続outbox、usage/log RPC、一括精算、残高不足終了画面は既存TypeScript層を共有し、iOS専用の課金・所有者・精算規則は追加しない。通話画面も既存WebView UIを共有する。iOSの着信画面、着信事前接続、コール音、AlarmKit、CallKitは範囲外とし、ユーザー発信だけを有効にする。`NSMicrophoneUsageDescription`とXcode projectへのnative plugin登録を追加した。DB migration、Supabase、Edge Function、productionは変更しない。iOS実機ビルド・通話確認はMac/Xcode工程へ残す。）
 
 （v5.24: specをv4.5へ更新してA8-2を新設し、その先行範囲としてアプリ内疑似着信の事前接続、ユーザー発信コール音、マナーモード追従を実装した。着信画面表示後は認証sessionと対象キャラだけでAndroid nativeの`standby=1` WebSocketを準備し、録音、usage、課金、`calls`作成は行わない。応答後に既存の最新残高・owner付きpending・session・call作成・マイク権限確認を通過した場合、同じstandby socketをactiveへ昇格して録音を開始する。準備中または準備済みsocketが失敗・終了していれば既存の通常接続へfallbackする。拒否・画面離脱・開始拒否時は準備socketを閉じ、DB書込を残さない。ユーザー発信では開始判定通過後からnativeのSTT ready通知までコール音を鳴らし、接続確立・失敗・終了で停止する。Androidの着信音・コール音は`AudioManager.getRingerMode()`に従い、通常はring stream合成音+バイブ、バイブモードはバイブのみ、サイレントは無音とする。固定第一声は`fixed_voice_assets`工程、本番音源差し替えはF6へ残し、今回は実装しない。DB migration、Supabase、Edge Function、productionは変更しない。）
 
@@ -107,7 +129,7 @@
 - ファイル冒頭に「版数・最終更新日」を必ず持つ。
 - **マイナー（0.1上げ）** = 項目の追加・修正。通常の更新。
 - **メジャー（1.0上げ）** = 大きな方針転換、または実装フェーズ移行の節目。
-- 仕様書と本書は、対応が分かるように管理する。両者を常に同じ版数にはしない。**片方だけ内容が変わった場合は、変わった方だけ版数を上げ、変更履歴で対応関係を示す。** 中身が変わっていないファイルの版数を、同期目的だけで上げない。現在の対象仕様は `docs/voice_companion_spec.md` v4.4 正本。
+- 仕様書と本書は、対応が分かるように管理する。両者を常に同じ版数にはしない。**片方だけ内容が変わった場合は、変わった方だけ版数を上げ、変更履歴で対応関係を示す。** 中身が変わっていないファイルの版数を、同期目的だけで上げない。現在の対象仕様は `docs/voice_companion_spec.md` v4.7 正本。
 
 ## 1-3. 要件が変わった時のルール
 1. 仕様書の該当箇所を**直接書き換える**（正本なので最新が正）。
@@ -132,7 +154,12 @@
 - 推測で仕様を補わない。仕様判断が必要になった場合は作業を停止して報告する。
 - 用語を勝手に増やさない（過去に「システム案内」「接続中」等で混乱した経緯）。
 
-## 1-6. Supabase運用
+## 1-6. ビルド検証運用
+- ビルドを検証手段にしない。ビルド実行は「エラー文の要求」「現行Apple公式文書（その場で照合した一次情報）」「修正が最終成果物に入ることの機械検査」の3点が一致したときのみ許可する。一致しない間はビルドを起動しない。
+- ipa埋め込みInfo.plistの提出前機械検査を恒久維持する。
+- ビルド1回で検証する仮説は1個に限定する。
+
+## 1-7. Supabase運用
 - migration作成、Edge Function作成、必要なsecretの定義、RLS/API実装は、機能単位の作業内でCodexが進めてよい。
 - 開発中のDB・Edge Function・RLS・API検証はstagingで行う。
 - **機能PRをマージするたびに本番Supabaseへ反映しない。**
@@ -173,7 +200,7 @@
 - 本番(<prod-ref>)へのpush・deploy・secret変更・Dashboard設定変更は、リリース直前工程で明示的な指示があるときのみ
 - supabase startは使わない(ローカルDocker禁止)
 
-## 1-7. モデル運用
+## 1-8. モデル運用
 - 通常実装はTerraを使う。
 - 認証、RLS、課金、引き継ぎ、重大な設計判断、原因不明の問題、機能完了時レビューはSolを使う。
 - 検索、ログ整理、文書整形などの軽作業はLunaを使う。
@@ -201,7 +228,7 @@
   結果: AivisHub上でACML 1.0の候補を確認し、v1仮採用モデルを男女3ずつ決定。ライセンス面ではblockerではない。
   仮採用: 女性 = まお / コハク / 桜音。男性 = にせ / fumifumi / 猩々博士。
   注意: アプリ内キャラ名は声モデル名と分離してよい。実在人物系モデルは本人・公式アプリと誤認させない。
-  TTS方式決定(2026-07-18): TTS従量課金では採算が成立しないため、疑似電話・通知のAI音声再生はクラウドTTS(Aivis)ではなくオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX/桜音)を採用する。`poc/on-device-tts`のPoC実験は終了・採用決定済み。TTS本体・DeBERTa BERTともに動的INT8、文末単位ストリーミング再生、声モデルはCloudflare R2からキャラ選択時DL。桜音モデルは組み込み・再配布可を確認済み(条件: ライセンス文書同梱・非公式/本人無関係の表記)。詳細は`voice_companion_spec.md` A8-3 / H1を正とする。量子化・検証はローカル禁止でstaging AAB workflowのCI内で行う。
+  TTS方式決定(2026-07-18): TTS従量課金では採算が成立しないため、疑似電話・通知のAI音声再生はクラウドTTS(Aivis)ではなくオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX)を採用する。`poc/on-device-tts`のPoC実験は終了・採用決定済み。オンデバイスTTSは上記6キャラ全員が対象で、桜音1モデルに絞る前提にはしない。方式・量子化(TTS本体・DeBERTa BERTともに動的INT8)・配信(Cloudflare R2からキャラ選択時DL)が実際に成立するかの検証・テストには、桜音を基準モデルとして用いる。文末単位ストリーミング再生。桜音モデルは組み込み・再配布可を確認済み(条件: ライセンス文書同梱・非公式/本人無関係の表記)。詳細は`voice_companion_spec.md` A8-3 / H1を正とする。量子化・検証はローカル禁止でstaging AAB workflowのCI内で行う。
 - [~] **実機検証: モーニング導線**
   完了条件: iOS AlarmKit（iOS 26）と Android full-screen intent が、画面OFF・ロック中・端末未操作でも期待通り起動し、目覚まし用途として音が鳴ることを実機で確認。
   結果: iOSはAlarmKit検証済み。Androidは2026-07-05の検証で、full-screen intentによるロック画面上の疑似着信表示、疑似着信音、応答後のロック解除なし「AI通話に接続中」画面への遷移が成立。
@@ -307,9 +334,9 @@ PR #28/#29後の整理:
   - [x] PR #48: 同じ`call_id`の通話内だけで、確定・再生完了したuser/assistant発話を短期履歴として保持し、次ターンのAIへ時系列で渡す。上限は暫定で最大10往復・本文合計12,000文字（各発話最大1,200文字）で、超過時は古い通常会話から削除する。現在のユーザー発話は履歴に重複させず別のuser messageとして渡す。失敗・未完了・古い`turn_id`の結果は履歴化せず、通話終了または次の`call_id`開始時に破棄する。共通プロトコル土台とAndroid native→TypeScriptの非同期同期は自動テスト済み。staging Android実機では、短期記憶、近接センサーで画面消灯中も会話継続、画面復帰後の会話継続、回答速度に大きな悪化なしをPASSとして確認した。Android staging AAB 1016で判明した、activeへ昇格済みのstandby WebSocketをFunction側が`standby=true`のまま扱い2回目の`empty_completed`を誤分岐させる問題は、staging `voice-turn` version 11で修正した。修正後の同一通話で、1回目・2回目の異なる固定聞き返し音声と各録音再開、2回目に「聞き取り中」で停止しないこと、3回目の案内音声と「もう一度試す」「通話を終了」の表示、手動再試行後の録音再開と通常AI会話復帰をすべてPASSとして確認し、PR #48の対象範囲は実機確認完了とする。通話コイン消費は未実装であり、PR #48には含めない。mainマージ済み(2026-07-14、merge commit: `1e3bb3d35179eb62216895c749068ebdcd14ec22`)。
   - staging実機確認済み: 通話時間5分29.025秒、成功15ターン、途中エラーなし。150秒を超える継続通話を確認。staging `voice-turn` version 6 ACTIVE、staging AABで確認済み。
   - 本番Edge Function反映と本番総合実機確認はフェーズ4へ繰り越す。
-  - 残り: 通話コインの正式料金、モーニング／イベント経由の通話導線、iOS疑似電話。これらが未完了のため疑似電話全体は`[~]`を維持する。
+  - 残り: 通話コインの正式料金、モーニング／イベント発生ロジックと通知起動導線。これらが未完了のため疑似電話全体は`[~]`を維持する。
     - [x] 通話コイン消費の第1段階: ユーザーターンの録音開始から終了確定までをmonotonic clockで計測し、AI通常回答音声は端末の実再生時間だけを複数チャンク合算する。固定の聞き返し音声・エラー案内音声を音声種別で除外し、終了・途中停止時も同じturnの計測を一度だけ確定する。
-    - [x] OS共通のusageイベントとTypeScript記録サービスを追加し、`(call_id, turn_id)`・revision単位で古い更新を無視する。DB保存は次ターン開始を待たせず、通信失敗時は永続outboxへ保持して次回起動時に再送する。将来iOSは同じイベントpayloadへ接続する。
+    - [x] OS共通のusageイベントとTypeScript記録サービスを追加し、`(call_id, turn_id)`・revision単位で古い更新を無視する。DB保存は次ターン開始を待たせず、通信失敗時は永続outboxへ保持して次回起動時に再送する。AndroidとiOSは同じイベントpayloadへ接続する。
     - [x] stagingへmigration `20260714150000_add_call_usage_recording.sql` を適用。`calls`の合計時間・未精算状態と`call_logs`のターン別時間を追加し、本文保存と計測保存を同じ行へupsertするsecurity-definer RPCを実装した。`current_app_user_id()`による所有者確認、revision冪等性、非負制約、権限制限を含む。
     - [x] staging RPC確認: 同一turn再送は二重行にならず、通常AI音声700msとユーザーターン1,500ms、固定音声0msとユーザーターン1,000msの合計が`billable_duration_ms=3,200`となること、通話終了後`settlement_status=pending`となること、コイン残高不変、`coin_transactions`・`coin_consumptions`増加0を確認した。outboxの失敗保持・再起動復元は自動テストで確認した。
     - [x] PR #50レビュー修正後のstaging再確認: 同じturnへのusage二重送信は`recorded`と`stale_ignored`となり1行だけを維持した。content/usage同時送信は本文と計測を同一行へ保持し、5つの追加turn同時送信を含む6行で`turn_index`重複なし。`pending`送信後のusageは`settlement_status=pending`を維持して最新合計1,100msへ更新した。owner付きoutboxは再起動相当で2件から0件へ再送し、1,000ms・`pending`を保存した。コイン残高不変、`coin_transactions`・`coin_consumptions`増加0を再確認した。既適用migrationは競合安全なcall行lockを持つため変更せず、追加migrationは不要。
@@ -327,7 +354,9 @@ PR #28/#29後の整理:
     - [x] 通話ログ全仕様: 正常ターンの確定user transcriptとassistant textを`done`時点で保存し、AI音声全再生完了を待つ短期履歴とは分離する。content revision付きowner別永続outboxと所有者確認RPCにより、再送・後着・重複でも同じ`(call_id, turn_id)`行を維持する。ターン別の録音開始・終了・経過時間、通常AI音声の実再生時間に加え、VAD終了理由、応答生成時刻、通常AI音声開始時刻、本文確定状態を日次処理用に保存する。STT confidenceは値が提供されるまでNULL、音声ファイルは任意仕様のため未保存とする。`call_summaries`生成と本文削除の日次処理自体は記憶パイプラインの別工程とする。
     - [x] アプリ内疑似着信: 特別イベントでユーザーが事前にOKした後のforeground画面として、キャラ名・画像枠・着信状態・応答・拒否を表示する。応答は`special_event`開始元を保存しつつ既存の残高・未精算・セッション・native開始guardへ合流し、拒否はcallを作らず閉じる。アプリ内着信音は小音量の短い合成音とし、応答・拒否・画面離脱で停止する。イベント判定と通知起動は別工程で、当面の確認トリガーはdev/stagingの選択済みキャラのチャットだけに表示する。
     - [x] A8-2接続・音の先行実装: 着信画面中にcall未作成・録音未開始でstandby WebSocketを準備し、応答後の既存開始guard通過時だけ同じsocketをactiveへ昇格する。拒否と開始拒否ではsocketを破棄する。ユーザー発信は接続readyまでコール音を鳴らす。Androidの着信音・コール音・バイブは通常／バイブ／サイレントのringer modeへ従う。固定第一声は`fixed_voice_assets`工程、本番音源はF6で差し替える残作業とする。
-    - 現在存在するAndroid疑似電話で先行実装・実機確認し、将来のiOS疑似電話も同じOS共通の計算・精算方式へ接続する。Androidだけで完結する業務ルールにはしない。
+    - [x] iOS疑似電話の第1段階: ユーザー発信を`AVAudioEngine` / `AVAudioConverter`による24kHz・mono・PCM16録音、`URLSessionWebSocketTask`、`AVAudioPlayer`へ接続する。`call-protocol.json`由来の共通イベントpayloadをTypeScriptへ通知し、usage計測、owner付きoutbox、残高判定、ログ保存、一括精算、残高不足終了、WebView通話画面をAndroidと共有する。iOS専用の業務ルールは作らない。AlarmKit連携、CallKitは範囲外。
+    - [x] iOS A8-2: Androidと同じアプリ内着信画面・応答・拒否を有効化し、着信中はcall/録音/usageを開始せずstandby WebSocketだけを準備する。応答時は共通開始guard後に準備socketを昇格し、拒否・離脱時は破棄する。着信音・ユーザー発信コール音はiOS nativeのPCM合成音とし、`.ambient`でサイレントスイッチ、`AudioServices`で端末のバイブ設定へ従う。固定第一声、本番音源、イベント発生・通知起動は別工程とする。
+    - AndroidとiOSの疑似電話は同じOS共通の計算・精算方式へ接続する。AndroidまたはiOSだけで完結する業務ルールにはしない。
 
 ### 疑似電話の会話品質: 確認済み・未解決の事実
 
@@ -338,8 +367,8 @@ PR #28/#29後の整理:
 
 ### オンデバイスTTS本実装（採用決定・2026-07-18）
 
-- 前提: `poc/on-device-tts`のPoC実験は終了し、オンデバイスTTS採用を決定済み。仕様は`voice_companion_spec.md` A8-3 / H1 / H4を正とする。
-- [ ] 疑似電話・通知のAI音声再生を、クラウドTTS(Aivis)からオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX/桜音)へ置き換える。TTS本体・DeBERTa BERTともに動的INT8、文末(。!?)単位のストリーミング合成・逐次再生とする（読点分割は不採用）。
+- 前提: `poc/on-device-tts`のPoC実験は終了し、オンデバイスTTS採用を決定済み。仕様は`voice_companion_spec.md` A8-3 / H1 / H4を正とする。オンデバイスTTSはv1の6キャラ全員が対象で、桜音は方式・量子化・配信の検証基準モデルとして用いる(桜音1モデルに絞る前提にはしない)。
+- [ ] 疑似電話・通知のAI音声再生を、クラウドTTS(Aivis)からオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX)へ置き換える。TTS本体・DeBERTa BERTともに動的INT8、文末(。!?)単位のストリーミング合成・逐次再生とする（読点分割は不採用）。
 - [ ] 声モデルは初期アプリに同梱せず、キャラ選択時にCloudflare R2からダウンロードする。ライセンス文書をダウンロード時に同梱・保存する。
 - [ ] 量子化(TTS/BERTの動的INT8生成)とその検証はローカルで行わず、staging AAB workflowのCI内で実行する（ローカルでの重い処理は禁止）。
 - [ ] 本実装には、通話フリーズ切り分け用に STT / LLM / TTS / 再生 の各区間でどこで停滞したかを記録するログを含める。
@@ -348,7 +377,7 @@ PR #28/#29後の整理:
 
 **当面の作業順序:**
 
-1. 仕様書反映（本更新。spec v4.6 / build plan v5.25）
+1. 仕様書反映（本更新。spec v4.7 / build plan v5.37）
 2. PR #48決着
 3. オンデバイスTTS本実装（上記フリーズログ込み）
 4. フリーズバグ対応（「疑似電話の会話品質」および本実装のフリーズログで判明する停滞の原因特定と修正）
@@ -366,6 +395,8 @@ PR #28/#29後の整理:
 - [ ] 本番RLS実動作と`current_app_user_id()`による`public.users.id`解決を確認する
 - [ ] 本番Supabase接続のリリース候補アプリで主要導線を総合確認する
 - [ ] 実機検証全項目（マイク権限 / Android `AudioRecord` 24kHz mono PCM16 / STTストリーミング / VAD / TTS再生 / TTS後の発話待ち復帰 / 残高不足 / 二重消費なし）
+- [ ] Bluetoothヘッドセットでの通話入出力対応（現行は両OSとも本体受話口/スピーカーのみ）
+- [ ] 電話着信・他アプリ音声による割り込み終了後の安全な自動復帰（現行はusage確定・outbox・一括精算へ合流して終了し、利用者が新しい通話を開始する）
 - [ ] モーニングからの本番AI通話開始 / 通知→疑似LINE経由の通話開始（Androidは `USE_FULL_SCREEN_INTENT`、メーカー別full-screen intent動作、Foreground Service音、通知タップフォールバック、専用Activity遷移、実AI接続込みで再確認）
 - [ ] ストア審査確認（iOSでCallKit不使用の方針が保てているか、疑似電話がガイドライン適合か）
 - [ ] ストア商品設定（消耗型コイン / 非消耗キャラ枠 / 自動更新サブスク）
@@ -375,7 +406,7 @@ PR #28/#29後の整理:
 ## 補足: 未決（Z）と本書の対応
 - Z-1〜Z-3（数値）→ フェーズ2
 - Z-4（記憶の日数・遅延）→ フェーズ0/3で実測しながら
-- Z-6（声・素材）→ フェーズ0。声モデルの商用ライセンス確認とv1仮採用は完了。TTS方式はオンデバイスTTS(桜音AIVMX動的INT8)採用を決定済み(2026-07-18)で、実測でTTS品質(INT8劣化なし)・速度基準(1文目 約0.9〜1.0秒)も確認済み。残りはキャラ画像・猫の鳴き声・固定音声素材の作成、低速端末対策の方針決定(F6)。詳細はspec A8-3 / H1。
+- Z-6（声・素材）→ フェーズ0。声モデルの商用ライセンス確認とv1仮採用は完了。TTS方式はオンデバイスTTS(Style-Bert-VITS2系AIVMX動的INT8)採用を決定済み(2026-07-18)で、v1の6キャラ全員が対象。桜音を検証基準モデルとした実測でTTS品質(INT8劣化なし)・速度基準(1文目 約0.9〜1.0秒)も確認済み。残りはキャラ画像・猫の鳴き声・固定音声素材の作成、低速端末対策の方針決定(F6)。詳細はspec A8-3 / H1。
 - Z-7（画面設計）→ フェーズ1/3で各画面を作りながら確定
 - Z-8（RLS・API）→ フェーズ1。RLS・制約・インデックスのDB土台と指定migration 5件の本番反映は完了済み。v4.3匿名Auth方針でのRLS実動作と `current_app_user_id()` による `public.users.id` 解決は staging で検証済み・PASS（2026-07-11、漏れなし）。今後追加するmigration、Edge Function、secret、RLS/APIは開発中stagingで検証し、本番反映・本番RLS確認・本番`current_app_user_id()`確認はフェーズ4でまとめて行う。API設計、Edge Function整理、アプリ側読み書き実装は各機能工程で進める。匿名サインインと引き継ぎコードを前提にする。`transfer_codes` はテーブル追加のみで、発行/引き換え用 Edge Function / RPC とUIは未実装。
 - Z-9（実機検証）→ フェーズ0・フェーズ4。Androidモーニング導線のフェーズ0検証は合格、残りは本番AI接続・フォールバック・リリース前総合確認。
