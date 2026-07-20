@@ -1,6 +1,8 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.37 ／ 最終更新日: 2026-07-18**
+**版数: v5.38 ／ 最終更新日: 2026-07-20**
+
+（v5.38: オンデバイスTTSの声モデル配信を単一bundleから「共通BERT＋キャラ別モデル」方式へ分割実装し、桜音＋花音の2キャラでCI検証まで完了した。実態は、共通BERT bundle1個(DeBERTa BERT＋共通ライセンス)＋桜音character bundle＋花音character bundleの3構成。Android側は共通BERTを端末へ1回だけ取得・保存して再利用し、既取得キャラは再DLせず、キャラ切替(桜音→花音→桜音)でも共通・既取得キャラモデルを再DLしない。片方のDL/検証/更新失敗は既存の正常インストールを壊さない(原子的入替＋失敗時ロールバック)。設定はcharacter_idごとのURL方式(`VITE_TTS_COMMON_BUNDLE_URL` / `VITE_TTS_COMMON_VERSION` / `VITE_TTS_CHARACTER_BUNDLES`)。CIは実モデルから共通1＋キャラ2を動的INT8量子化・組立・検証する(各キャラのstyle_vectorは各AIVMXのONNX metadata `aivm_style_vectors` から抽出、桜音は既存golden fixtureと一致を検証)。実モデルはGit/AABに入れずCI内のみで扱う。bundle payload実サイズ: common=475,567,269B(約453MiB)、桜音=255,610,450B(約244MiB)、花音=251,080,348B(約239MiB)。端末DL量=共通＋当該キャラ(桜音約697MiB、花音約693MiB)、両方導入でも共通は1回=約937MiB。CIは`Build on-device TTS model bundles (staging)` run `29744823614` と `Android On-Device TTS Test` run `29744823724` がgreen。**Cloudflare R2は未設定・未アップロード、実機確認は未実施。本項は完了ではなく「実装・CI完了、R2配信・実機確認待ち」。** PR #67はDraft維持。specはv4.8へ共通BERT＋キャラ別の配信構成を最小限追記(製品方針は不変)。本更新でmain・production・R2は変更していない。）
 
 （v5.37: 正本 voice-companion-docs のドキュメント2件(オンデバイスTTS採用反映=旧spec v4.6/build_plan v5.25、PR #48 mainマージ状態記録=旧build_plan v5.26)を当リポジトリのドキュメントへ統合した。具体的には、フェーズ0の声モデル項へTTS方式決定を追記、疑似電話のPR #48行へmainマージ済み(2026-07-14、merge commit `1e3bb3d35179eb62216895c749068ebdcd14ec22`)を追記、「オンデバイスTTS本実装(採用決定・2026-07-18)」節を新設、Z-6を更新した。specはv4.7へ統合済み(iOSネイティブ録音反映とオンデバイスTTS採用を併存)。当リポジトリの既存v5.25/v5.26(iOS疑似電話関連)と版数が衝突するため、統合版をv5.37とした。オンデバイスTTSはv1の6キャラ全員が対象で、桜音は方式・量子化・配信の検証基準モデルとして用いる(桜音1モデルに絞る前提にはしない)。本更新は文書のみで、コード・DB migration・Supabase・Edge Function・productionは変更しない。）
 
@@ -368,12 +370,20 @@ PR #28/#29後の整理:
 ### オンデバイスTTS本実装（採用決定・2026-07-18）
 
 - 前提: `poc/on-device-tts`のPoC実験は終了し、オンデバイスTTS採用を決定済み。仕様は`voice_companion_spec.md` A8-3 / H1 / H4を正とする。オンデバイスTTSはv1の6キャラ全員が対象で、桜音は方式・量子化・配信の検証基準モデルとして用いる(桜音1モデルに絞る前提にはしない)。
-- [ ] 疑似電話・通知のAI音声再生を、クラウドTTS(Aivis)からオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX)へ置き換える。TTS本体・DeBERTa BERTともに動的INT8、文末(。!?)単位のストリーミング合成・逐次再生とする（読点分割は不採用）。
-- [ ] 声モデルは初期アプリに同梱せず、キャラ選択時にCloudflare R2からダウンロードする。ライセンス文書をダウンロード時に同梱・保存する。
-- [ ] 量子化(TTS/BERTの動的INT8生成)とその検証はローカルで行わず、staging AAB workflowのCI内で実行する（ローカルでの重い処理は禁止）。
+- [x] 疑似電話・通知のAI音声再生を、クラウドTTS(Aivis)からオンデバイスTTS(ONNX Runtime + Style-Bert-VITS2系AIVMX)へ置き換える実装。TTS本体・DeBERTa BERTともに動的INT8、文末(。!?)単位のストリーミング合成・逐次再生（読点分割は不採用）。※コード実装・CI green。実機確認は未実施。
+- [x] 配信を「共通BERT＋キャラ別モデル」方式へ分割するコード実装。声モデルは初期アプリに同梱せず、共通BERT bundle(共有DeBERTa BERT＋共通ライセンス)を端末へ1回だけDL・保存・再利用し、キャラ別bundle(AIVMX＋voice-config＋モデルライセンス)をキャラごとにDL・保存する。キャラ切替(桜音→花音→桜音)でも共通・既取得キャラモデルを再DLせず(キャッシュ)、片方のDL/検証/更新失敗が既存の正常インストールを壊さない(失敗隔離＝原子的入替＋失敗時ロールバック)。設定は`VITE_TTS_COMMON_BUNDLE_URL` / `VITE_TTS_COMMON_VERSION` / `VITE_TTS_CHARACTER_BUNDLES`。※実装・自動テスト・CI green。
+- [ ] Cloudflare R2への共通/キャラ別bundle配置、`VITE_TTS_*` URL設定、端末からの実ダウンロード。**現状R2は未設定・未アップロードのため実配信は未成立、実機確認も未実施。**
+- [x] 量子化(TTS/BERTの動的INT8生成)とその検証はローカルで行わず、CI内で実行(ローカルでの重い処理は禁止)。CIで桜音＋花音の実AIVMXとDeBERTaから共通1＋キャラ2 bundleを生成・検証(run `29744823614` green)。実モデルはGit/AABに入れずCI内のみ。
 - [ ] 本実装には、通話フリーズ切り分け用に STT / LLM / TTS / 再生 の各区間でどこで停滞したかを記録するログを含める。
 - [ ] 低速端末対策（基準端末水準に満たない端末の実用速度不足時の、端末条件配信制限またはクラウドTTSフォールバック）は実装時に決める。F6の未決項目として扱う。
 - 実測基準値(参考): POCO X6 Pro / Dimensity 8300-Ultra / CPU EP 4スレッドで、1文目再生開始まで約0.9〜1.0秒、RTF約0.7、初期化約5.5秒(常駐・初回のみ)。iPhone 12相当を当面の仮推奨基準端末とする。
+
+**共通化実装の現状(2026-07-20・実装/CI完了、R2配信・実機確認待ち):**
+
+- 構成: 共通BERT bundle1個＋桜音character bundle＋花音character bundle。桜音＝配信検証の基準モデル、花音＝共通化検証用の2体目(同一作者・同一ACML 1.0・同一利用条件)。
+- bundle payload実サイズ: common=475,567,269B(約453MiB)、桜音=255,610,450B(約244MiB)、花音=251,080,348B(約239MiB)。端末DL量=共通＋当該キャラ(桜音約697MiB、花音約693MiB)、両方導入でも共通は1回=約937MiB。
+- CI: `Build on-device TTS model bundles (staging)` run `29744823614` green、`Android On-Device TTS Test` run `29744823724` green。
+- 未了: Cloudflare R2未設定・未アップロード、実機確認未実施。PR #67はDraft維持。次工程はR2 bucket/認証/公開方式の決定とアップロード。
 
 **当面の作業順序:**
 
