@@ -1,6 +1,30 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.57 ／ 最終更新日: 2026-07-25**
+**版数: v5.59 ／ 最終更新日: 2026-07-26**
+
+（v5.59: iOS正式疑似通話の工程3「正式iOS Session／Controller骨組み」と工程4「接続・録音・usage・終了処理移行」を、
+TestFlight実機確認まで完了した。6 Controllerへの責務分割とその後の実処理移設を行い、Codemagic staging index 30〜33で
+Swiftコンパイルを確認したうえで、実機で発信・会話継続・スピーカー/受話口切替・近接センサーによる画面消灯・聞き返し・
+録音準備音・終話・コイン消費を確認した。実機で3件の不具合を検出して修正した。
+(1) 通話終了後に次の通話が「前の通話を処理しています」で永久に開始できない。工程4でSessionの終了処理が
+activeなturn1件しか確定しておらず、複数turnの通話でWeb側の`finalizedTurnCount === expectedTurnCount`検証に落ちて
+完了イベントが破棄され、精算outboxが作られなかった。Android `VoiceUsageController.completeTermination`と同じく
+終了時に全turnを確定する`finishAllTurns()`へ変更し、送出直前にも再確認する二重の防御を入れた(commit `c62f34f`)。
+(2) 初回応答が約20秒かかる。`AVAudioSession`の`.voiceChat`が自動ゲイン調整で無音時の雑音を底上げし、
+固定RMSしきい値を超え続けてしゃべり終わりを検出できず、録音上限20秒まで走っていた。
+(3) 再生音が最大音量でも極端に小さい。同じ`.voiceChat`の音声処理が再生も減衰させていた。
+(2)(3)は共通原因として`.playAndRecord` mode を`.voiceChat`から`.default`へ変更し、あわせて無音継続判定を
+観測した発話ピークに対する相対しきい値(peak×0.15と固定値の大きい方)へ変更した。AI音声再生前に必ず録音を停止する
+既存設計のため、マイクとスピーカーが同時に動く区間が無くエコー除去への依存は小さい。VAD診断表示も追加した(commit `00c2ecd`)。
+実機再確認で、発話後1.6〜2.0秒で応答が始まること、音量が改善したこと、相対しきい値が大音量発話でも正しく働くこと
+(peak=0.3213のとき閾値0.0482で1.6秒検出)を確認した。無音のまま上限20秒に達した場合はサーバーが`stt_recovery`を
+送出して聞き返しが流れることも実機で確認した。iOSの聞き返しはクラウド音声で成立しており、
+工程7でオンデバイスTTSへ移す際はサーバーが既に送っている`stt_recovery_prompt`(テキスト)を使う。
+あわせて花音を通常のキャラ名一覧へ追加し、`VITE_TTS_CHARACTER_BUNDLES`が渡らないiOSビルドでも他キャラと同じ扱いで
+表示されるようにした。通話中の電話着信による割り込みは未確認。次工程は5「ONNX Runtime・共通日本語frontend基盤」。
+spec v4.9、Android、main、production、DB、migration、RPC、R2、env、secret、Edge Functionは本更新では変更しない。）
+
+（v5.58: iOS正式疑似通話の工程2「契約固定・テスト基盤」を完了した。`allowPreparedConnection`はiOS側で一度も読まれておらず、`incomingPreparationActive`だけで昇格を判定していたため、疑似着信用に準備したstandby socketをユーザー発信が昇格し得る状態だった。この契約を修正し、判定は工程3で`IOSVoiceConnectionController`へ移した。method/event payloadを`tests/fixtures/iosVoiceCallContract.json`へfixture化し、Node構造テストと`tests/iosVoiceCall.test.mjs`の版数pinを更新した。`AppTests` XCTest targetを`ios/App/App.xcodeproj`へ配線し、shared scheme `AppTests`とCodemagic stagingの実行stepを追加した。Codemagic `VoiceCompanion iOS Staging` Build ID `6a648f35ac10b841e75cec39`(index 33、対象commit `7a72f598d7f31c290a5459af251998cf4e1c54e9`)はSUCCESSし、`IOSPreparedConnectionDecisionTests`が9 tests / 0 failures / 0 unexpectedでTEST SUCCEEDED、App.ipaの生成も成功した。よって移行順序2を`[x]`とする。工程3は6 Controllerの実装とSwiftコンパイル確認(index 30 / 31 / 32)まで完了しているが、実機確認が未実施のため`[]`を維持する。次工程は4「接続・録音・usage・終了処理移行」で、本更新では着手しない。IPA内に`.xctest`が含まれないことを検査する処理をstagingの既存IPA検証stepへ統合したが、この検査自体は次回以降のstagingビルドで初めて実行される。spec v4.9、Android、main、production、DB、migration、RPC、R2、env、secret、Edge Function、production workflowは本docs更新では変更しない。）
 
 （v5.57: PR #69がmainへマージ済み(merge commit `2454f2482ada367bd7e1de04223dda1f1554ce7a`)となり、Android正式通話Pluginへの必須移行が完了したため、次の主題である「iOS正式疑似通話・オンデバイスTTS接続」の工程1〜10を本書へ追加した。現在の`IOSVoiceCallPlugin.swift`は、接続・録音・クラウドMP3再生・usage・終了・診断など複数の責務を単一Plugin内で持っている。iOSのnative録音、WebSocket、VAD、usage、終了処理は既存コードに実装されているが、現行構成での実機動作確認状態は未確認である。ONNX Runtime、iOSオンデバイスTTS、モデル管理は未実装である。iOS工程は最新Android正式実装の構造・状態遷移・責務境界を設計の参考にするが、Android JavaコードをSwiftへ機械的にコピーしない。現行iOSに実装済みの`AVAudioEngine`、`URLSessionWebSocketTask`、`AVAudioSession`等のiOS固有処理は、新しい正式Swift構成へ移す。工程1「iOS現行責務・依存関係調査」はmain HEAD `2454f2482ada367bd7e1de04223dda1f1554ce7a`で調査済み・調査時の変更なしのため`[x]`とし、工程2〜10は未着手の`[ ]`とする。固定方針として、Android工程8には着手しない、Android実装を変更しない、クラウドTTS不採用、クラウドTTS fallback不採用、`public.users.id`契約維持、nativeからSupabaseへ直接書き込まない、各工程は自動テストと必要な実機確認が終わるまで`[x]`にしない、mainへ直接commitしないことを明記した。本更新はdocs-onlyであり、spec v4.9、Android実装コード、iOS実装コード、Edge Function、DB、migration、RPC、R2、env、secret、Codemagic、production、mainは変更しない。）
 
@@ -481,6 +505,8 @@ PR #28/#29後の整理:
 
 次工程はPR #69のマージ後、別branch・別PRで「iOS正式疑似通話・オンデバイスTTS接続」。PR #69は2026-07-24にmainへマージ済み(merge commit `2454f2482ada367bd7e1de04223dda1f1554ce7a`)であり、以降は下記のiOS移行順序で進める。
 
+現在の位置: 移行順序4まで完了(2026-07-26、実機確認済み)。次に行う工程は5「ONNX Runtime・共通日本語frontend基盤」。iOSは現在クラウド音声のため全キャラ共通の声で、キャラ別の声になるのは工程7以降。
+
 **正式iOS疑似通話・オンデバイスTTS接続の前提(2026-07-25・v5.57):**
 
 - 現在の`IOSVoiceCallPlugin.swift`は、接続・録音・クラウドMP3再生・usage・終了・診断など複数の責務を単一Plugin内で持っている。
@@ -503,9 +529,17 @@ PR #28/#29後の整理:
 **正式iOS疑似通話・オンデバイスTTS接続への移行順序:**
 
 1. [x] iOS現行責務・依存関係調査: main HEAD `2454f2482ada367bd7e1de04223dda1f1554ce7a`で調査済みで、調査時のコード変更はない。現在の`IOSVoiceCallPlugin.swift`は、接続・録音・クラウドMP3再生・usage・終了・診断など複数の責務を単一Plugin内で持っている。native録音、WebSocket、VAD、usage、終了処理は既存コードに実装されているが、現行構成での実機動作確認状態は未確認である。ONNX Runtime、iOSオンデバイスTTS、モデル管理は未実装であり、工程5〜7で新規に用意する。
-2. [ ] 契約固定・テスト基盤: Web↔native間のmethod/event契約を先に固定する。`allowPreparedConnection`を正しく扱い、ユーザー発信ではstandby昇格を禁止し、疑似着信応答のときだけstandby昇格を可能にする。method/event payloadをfixture化し、`tests/iosVoiceCall.test.mjs`の版数pinを更新する。Swift側の単体テスト用にXCTest targetを追加する。この工程ではcloud経路を切り替えず、既存の実通話経路を維持する。
-3. [ ] 正式iOS Session／Controller骨組み: `IOSVoiceCallPlugin`をCapacitor bridge中心へ縮小し、`IOSVoiceCallSession`、`IOSVoiceConnectionController`、`IOSVoiceRecordingController`、`IOSVoiceUsageController`、`IOSVoiceAudioRouteController`、`IOSVoiceTtsController`を追加する。必要以上に一度に分割せず、工程ごとに責務を移行する。Android正式実装は構造・状態遷移・責務境界の設計参考とし、機械移植はしない。
-4. [ ] 接続・録音・usage・終了処理移行: `URLSessionWebSocketTask`によるactive接続、standby準備・昇格、reconnect、closeを接続Controllerへ移す。`AVAudioEngine`による24kHz・mono・PCM16録音、VAD、`speech_end`の一回送信を録音Controllerへ移す。usage集計、fatal通知、call/turn/世代によるstale callback拒否をSession境界で固定する。既存のWeb method/event契約は維持し、iOS専用の業務ルールは作らない。
+2. [x] 契約固定・テスト基盤: Web↔native間のmethod/event契約を固定した。iOSの`IOSVoiceCallPlugin`は`allowPreparedConnection`を一度も読まず`incomingPreparationActive`だけで昇格を判定していたため、ユーザー発信が疑似着信用standby socketを昇格し得る状態だった。`call.getBool("allowPreparedConnection") ?? false`を取得し、偽なら他条件を評価せず昇格しない判定へ修正した。昇格は「flag真＋着信準備有効＋standby socket存在＋url/token/character一致」の全成立時のみとし、判定は工程3で`IOSVoiceConnectionController`へ移した。method/event payloadと昇格判定8ケースを`tests/fixtures/iosVoiceCallContract.json`へfixture化し、Node構造テストと`tests/iosVoiceCall.test.mjs`の版数pinを更新した。`AppTests` XCTest target(`com.apple.product-type.bundle.unit-test`、host application=`App`、`TEST_HOST`/`BUNDLE_LOADER`設定、署名なし)を`project.pbxproj`へ配線し、shared scheme `AppTests`とCodemagic stagingの実行stepを追加した。Codemagic `VoiceCompanion iOS Staging` Build ID `6a648f35ac10b841e75cec39`、index 33、対象commit `7a72f598d7f31c290a5459af251998cf4e1c54e9`はSUCCESS。`IOSPreparedConnectionDecisionTests`は9 tests / 0 failures / 0 unexpectedでTEST SUCCEEDEDし、既存scheme `App`によるApp.ipaの生成も成功した。cloud経路は切り替えておらず、既存の実通話経路を維持している。IPA内に`.xctest`が含まれないことの検査はstagingの既存IPA検証stepへ統合したが、次回以降のstagingビルドで初めて実行されるため現時点では未確認である。
+3. [x] 正式iOS Session／Controller骨組み: `IOSVoiceCallPlugin`をCapacitor bridge中心へ縮小し、`IOSVoiceCallSession`、`IOSVoiceConnectionController`、`IOSVoiceRecordingController`、`IOSVoiceUsageController`、`IOSVoiceAudioRouteController`、`IOSVoiceTtsController`を追加する。必要以上に一度に分割せず、工程ごとに責務を移行する。Android正式実装は構造・状態遷移・責務境界の設計参考とし、機械移植はしない。6 Controllerは1移行単位=1責務で実装済みで、`IOSVoiceCallPlugin.swift`は1379行から1109行へ縮小した。Swiftコンパイルは Codemagic staging index 30(工程3-4まで)、index 31(工程3-5まで)、index 32(工程3-6、6責務完了)でいずれもSUCCESSを確認済み。**ただし実機確認が未実施のため未完了とする。** 本工程はsocket・録音・usage・audio route・再生という通話経路の実行時責務をすべて移設しており、コンパイル成功は動作を保証しない。Android正式実装の同種作業(移行順序6)でもAAB 1061のWebSocket URL処理、AAB 1062のコール音・着信音・バイブ・audio routeで、コンパイルが通る不具合が実機で見つかっている。実機確認まで完了した。Codemagic staging index 30(工程3-4まで)、31(工程3-5まで)、32(工程3-6、6責務完了)で
+Swiftコンパイルを確認し、TestFlight実機で発信・会話継続・スピーカー/受話口切替・近接センサー・聞き返し・
+録音準備音・終話・コイン消費を確認した。`IOSVoiceCallPlugin.swift`は1379行から1109行へ縮小した。
+移行順序9のTestFlight総合確認は別途行う。
+4. [x] 接続・録音・usage・終了処理移行: `URLSessionWebSocketTask`によるactive接続、standby準備・昇格、reconnect、closeを接続Controllerへ移す。`AVAudioEngine`による24kHz・mono・PCM16録音、VAD、`speech_end`の一回送信を録音Controllerへ移す。usage集計、fatal通知、call/turn/世代によるstale callback拒否をSession境界で固定する。既存のWeb method/event契約は維持し、iOS専用の業務ルールは作らない。
+socketの生成・受信ループ・close・自動再接続の予約を接続Controllerへ移し、Pluginは`URLSessionWebSocketTask`に
+一切触れない。`speech_end`の一回送信は録音Controllerが行う。終了順序(録音→再生→usage確定→接続)と
+usageの計測開始はSessionが仲介する(Android `ControllerBindings`相当)。stale callback拒否はSession境界の
+`isStaleCallback`と各Controllerの世代判定を併用する。実機確認で3件の不具合を検出・修正済み(v5.59の変更履歴参照)。
+通話中の電話着信による割り込みは未確認。
 5. [ ] ONNX Runtime・共通日本語frontend基盤: ONNX Runtime iOSを導入する。日本語frontendはRust実装のiOS static libraryまたはXCFramework化を第一候補として検証し、Swiftでfrontend全体を重複実装する案は共有が不能と判明した場合に限る。Android fixtureとの出力一致を自動テストで確認する。model sessionを文・turnごとに再生成しない。
 6. [ ] iOSモデルbundle管理: common BERT bundleとcharacter bundleを`URLSession` downloadで取得し、manifest検証、SHA-256検証、size検証、Zip Slip対策を行う。保存先はApplication Supportとし、一時領域で完全検証してから原子的に切替え、失敗時はrollbackする。取得済みbundleはcache再利用し、common bundleの再DLを防止する。
 7. [ ] iOSオンデバイスTTS: 通常回答を文単位で合成し順序どおり再生する。固定聞き返しと録音準備音を同経路で扱い、generationによるstale処理拒否を行う。usageは通常回答の実再生時間だけ加算し、固定聞き返しと録音準備音は非課金とする。cloud TTS fallbackは実装しない。
