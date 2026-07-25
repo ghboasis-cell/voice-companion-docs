@@ -1,6 +1,8 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.56 ／ 最終更新日: 2026-07-24**
+**版数: v5.57 ／ 最終更新日: 2026-07-25**
+
+（v5.57: PR #69がmainへマージ済み(merge commit `2454f2482ada367bd7e1de04223dda1f1554ce7a`)となり、Android正式通話Pluginへの必須移行が完了したため、次の主題である「iOS正式疑似通話・オンデバイスTTS接続」の工程1〜10を本書へ追加した。現在の`IOSVoiceCallPlugin.swift`は、接続・録音・クラウドMP3再生・usage・終了・診断など複数の責務を単一Plugin内で持っている。iOSのnative録音、WebSocket、VAD、usage、終了処理は既存コードに実装されているが、現行構成での実機動作確認状態は未確認である。ONNX Runtime、iOSオンデバイスTTS、モデル管理は未実装である。iOS工程は最新Android正式実装の構造・状態遷移・責務境界を設計の参考にするが、Android JavaコードをSwiftへ機械的にコピーしない。現行iOSに実装済みの`AVAudioEngine`、`URLSessionWebSocketTask`、`AVAudioSession`等のiOS固有処理は、新しい正式Swift構成へ移す。工程1「iOS現行責務・依存関係調査」はmain HEAD `2454f2482ada367bd7e1de04223dda1f1554ce7a`で調査済み・調査時の変更なしのため`[x]`とし、工程2〜10は未着手の`[ ]`とする。固定方針として、Android工程8には着手しない、Android実装を変更しない、クラウドTTS不採用、クラウドTTS fallback不採用、`public.users.id`契約維持、nativeからSupabaseへ直接書き込まない、各工程は自動テストと必要な実機確認が終わるまで`[x]`にしない、mainへ直接commitしないことを明記した。本更新はdocs-onlyであり、spec v4.9、Android実装コード、iOS実装コード、Edge Function、DB、migration、RPC、R2、env、secret、Codemagic、production、mainは変更しない。）
 
 （v5.56: Android正式通話Pluginへの必須移行は工程1〜7で完了した。正式`AndroidVoiceCall`経路はAAB 1064で発信・疑似着信・音・バイブ・AI音量・診断・録音復帰・旧Plugin削除後のPlugin取得を実機確認済みであり、PR #69をAndroid正式通話実装の完了PRとしてmainへマージ可能な状態とする。工程8「初回音声・文間遅延の計測と改善」はAndroid正式Plugin移行の完了条件には含めず、未着手の`[ ]`を維持する後続の性能改善と位置付ける。工程8の実装はPR #69へ含めない。PR #69のマージ後は、別branch・別PRでiOS正式疑似通話・オンデバイスTTS接続へ進む。spec v4.9、実装コード、main、production、DB、migration、RPC、R2、env、secret、Edge Function、iOSは本docs更新では変更しない。）
 
@@ -477,7 +479,39 @@ PR #28/#29後の整理:
 7. [x] 旧AndroidTtfaTestPluginの削除と残存参照整理: `AndroidTtfaTestPlugin`本体、旧Plugin専用usage barrier、登録、Web bridge・選択・fallback、専用テストランナーを削除し、実行コード内の旧Plugin参照を0件にした。正式Android通話経路と共通resource・dependencyは維持し、AAB 1064で発着信・音・バイブ・AI音量・診断・録音復帰を実機確認した。
 8. [ ] 初回音声・文間遅延の計測と改善（後続の性能改善）: Android正式Pluginへの必須移行は工程7までで完了しており、本工程は移行完了条件に含めない。新実装で区間別実測を取り、未解決の初回音声までの長い待ちと文間遅延を改善する。責務分割による余計なJSON変換、PCMコピー、スレッド切替を増やさない。
 
-次工程はPR #69のマージ後、別branch・別PRで「iOS正式疑似通話・オンデバイスTTS接続」。
+次工程はPR #69のマージ後、別branch・別PRで「iOS正式疑似通話・オンデバイスTTS接続」。PR #69は2026-07-24にmainへマージ済み(merge commit `2454f2482ada367bd7e1de04223dda1f1554ce7a`)であり、以降は下記のiOS移行順序で進める。
+
+**正式iOS疑似通話・オンデバイスTTS接続の前提(2026-07-25・v5.57):**
+
+- 現在の`IOSVoiceCallPlugin.swift`は、接続・録音・クラウドMP3再生・usage・終了・診断など複数の責務を単一Plugin内で持っている。
+- iOSのnative録音、WebSocket、VAD、usage、終了処理は既存コードに実装されているが、現行構成での実機動作確認状態は未確認である。
+- ONNX Runtime、iOSオンデバイスTTS、モデル管理は未実装である。
+- iOS工程は、最新Android正式実装の構造・状態遷移・責務境界を設計の参考にする。ただしAndroid JavaコードをSwiftへ機械的にコピーしない。
+- 現行iOSに実装済みの`AVAudioEngine`、`URLSessionWebSocketTask`、`AVAudioSession`等のiOS固有処理は、新しい正式Swift構成へ移す。
+
+**iOS工程を通じた固定方針(工程1〜10で変更しない):**
+
+- Android工程8「初回音声・文間遅延の計測と改善」には着手しない。
+- Android実装を変更しない。
+- クラウドTTSは不採用。
+- クラウドTTS fallbackは不採用。
+- `public.users.id`契約を維持する。
+- nativeからSupabaseへ直接書き込まない。
+- 各工程は自動テストと必要な実機確認が終わるまで`[x]`にしない。
+- mainへ直接commitしない。
+
+**正式iOS疑似通話・オンデバイスTTS接続への移行順序:**
+
+1. [x] iOS現行責務・依存関係調査: main HEAD `2454f2482ada367bd7e1de04223dda1f1554ce7a`で調査済みで、調査時のコード変更はない。現在の`IOSVoiceCallPlugin.swift`は、接続・録音・クラウドMP3再生・usage・終了・診断など複数の責務を単一Plugin内で持っている。native録音、WebSocket、VAD、usage、終了処理は既存コードに実装されているが、現行構成での実機動作確認状態は未確認である。ONNX Runtime、iOSオンデバイスTTS、モデル管理は未実装であり、工程5〜7で新規に用意する。
+2. [ ] 契約固定・テスト基盤: Web↔native間のmethod/event契約を先に固定する。`allowPreparedConnection`を正しく扱い、ユーザー発信ではstandby昇格を禁止し、疑似着信応答のときだけstandby昇格を可能にする。method/event payloadをfixture化し、`tests/iosVoiceCall.test.mjs`の版数pinを更新する。Swift側の単体テスト用にXCTest targetを追加する。この工程ではcloud経路を切り替えず、既存の実通話経路を維持する。
+3. [ ] 正式iOS Session／Controller骨組み: `IOSVoiceCallPlugin`をCapacitor bridge中心へ縮小し、`IOSVoiceCallSession`、`IOSVoiceConnectionController`、`IOSVoiceRecordingController`、`IOSVoiceUsageController`、`IOSVoiceAudioRouteController`、`IOSVoiceTtsController`を追加する。必要以上に一度に分割せず、工程ごとに責務を移行する。Android正式実装は構造・状態遷移・責務境界の設計参考とし、機械移植はしない。
+4. [ ] 接続・録音・usage・終了処理移行: `URLSessionWebSocketTask`によるactive接続、standby準備・昇格、reconnect、closeを接続Controllerへ移す。`AVAudioEngine`による24kHz・mono・PCM16録音、VAD、`speech_end`の一回送信を録音Controllerへ移す。usage集計、fatal通知、call/turn/世代によるstale callback拒否をSession境界で固定する。既存のWeb method/event契約は維持し、iOS専用の業務ルールは作らない。
+5. [ ] ONNX Runtime・共通日本語frontend基盤: ONNX Runtime iOSを導入する。日本語frontendはRust実装のiOS static libraryまたはXCFramework化を第一候補として検証し、Swiftでfrontend全体を重複実装する案は共有が不能と判明した場合に限る。Android fixtureとの出力一致を自動テストで確認する。model sessionを文・turnごとに再生成しない。
+6. [ ] iOSモデルbundle管理: common BERT bundleとcharacter bundleを`URLSession` downloadで取得し、manifest検証、SHA-256検証、size検証、Zip Slip対策を行う。保存先はApplication Supportとし、一時領域で完全検証してから原子的に切替え、失敗時はrollbackする。取得済みbundleはcache再利用し、common bundleの再DLを防止する。
+7. [ ] iOSオンデバイスTTS: 通常回答を文単位で合成し順序どおり再生する。固定聞き返しと録音準備音を同経路で扱い、generationによるstale処理拒否を行う。usageは通常回答の実再生時間だけ加算し、固定聞き返しと録音準備音は非課金とする。cloud TTS fallbackは実装しない。
+8. [ ] WebSocketオンデバイス専用契約: `on_device_tts=1`、`stt_recovery_prompt`、LLM text eventを用いる契約へ揃え、iOS側がcloud MP3を再生しないようにし、server側の不要なcloud MP3生成を停止する。iOSローカルTTSの接続成立前にcloud MP3を止めない。Edge Function変更が必要な場合は、この工程の開始前に対象と影響を報告する。
+9. [ ] staging切替・Codemagic・TestFlight実機確認: Swift unit test、TTS env検査、archive、IPA検査を通し、TestFlightで配布する。実機では発信、疑似着信応答、録音、AI通常音声、固定聞き返し、録音準備音、receiver/speaker切替、近接センサー、interruption、usage、終了を確認する。
+10. [ ] 暫定経路削除・残存参照整理: cloud MP3再生処理、旧一括Plugin責務、fallback、不要listener、不要テストを削除し、実行コード内のcloud TTS fallback参照が0件であることを確認する。
 
 - [ ] 通知（A10）: デイリー生成通知（通知文＋入口メッセージの事前生成）、`notification_candidates` / `notification_logs` への保存、同じ文脈IDでの通知文・入口メッセージ連携、関係値重み配分＋lover毎日確定、キャラ個別ON/OFF、`device_installations` を使った有効端末送信、重複防止
 - [ ] イベント・告白（A11）: 発生条件（サーバルール）、通常通知→疑似LINE入口メッセージ→電話していい？→OK→アプリ内疑似着信→応答→疑似電話の導線、告白・関係状態変更・呼び方変更の明示同意フロー、pending状態、未応答時の戻し/保留、lover化と文脈変化、iOS/Android共通の告白導線
