@@ -1,8 +1,19 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.66 ／ 最終更新日: 2026-07-26**
+**版数: v5.67 ／ 最終更新日: 2026-07-27**
 
-（v5.66: iOS移行順序10「暫定経路削除・残存参照整理」を完了し、移行順序1〜10がすべて
+（v5.67: Android近接センサーの復旧を完了した。commit `4cada75`。通話中に端末を顔へ
+近づけても画面が消えなくなっていた回帰(2026-07-24 commit `294167e` の旧Plugin一括削除で
+移し忘れ)を、新しい`voicecall`実装へ戻した。`VoiceAudioRouteController` と同じく、
+判断を持つ`VoiceCallScreenController`と、Android APIを扱うPlugin側の
+`AndroidCallScreenBackend`に分けた。判断する層は`android.*`をimportしない。
+
+CI run 30236438278 でGradle unit test(新規7件を含む)がBUILD SUCCESSFUL。staging AAB
+1066(run 30236600688)の実機で、顔へ近づけると画面が消え、離すと戻り、消えている間も
+会話が続き、通話終了で画面が戻ることを確認した。既存動作の非破壊も確認した。
+
+同じ消え方を繰り返さないよう、責務の所在と配線を固定するNode構造テストを追加した。
+iOS・本番Supabase・本番Edge Functionは未変更。／v5.66: iOS移行順序10「暫定経路削除・残存参照整理」を完了し、移行順序1〜10がすべて
 終わった。commit `2135bd6` でcloud MP3の受信・キュー・再生をiOSから削除し、Androidと
 同じ状態にそろえた。`IOSVoiceTtsController` は381行から139行になり、残るのは録音準備音の
 再生だけである。実行コードにcloud TTS/MP3再生の参照は0件。TestFlight実機で通話成立、
@@ -707,7 +718,7 @@ XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic sta
 
 **Android近接センサーの復旧（移行時の移し忘れ・Android単独）:**
 
-- [ ] 通話中に端末を顔へ近づけたとき画面を消す機能を、新しい`voicecall`実装へ戻す。
+- [x] 通話中に端末を顔へ近づけたとき画面を消す機能を、新しい`voicecall`実装へ戻す。commit `4cada75`で`VoiceCallScreenController`(判断のみ・`android.*`をimportしない)と、Plugin側の`AndroidCallScreenBackend`(SensorManager / PowerManager / Window)に分けて実装した。`VoiceAudioRouteController`と同じ形。音声経路と同じ入口(`prepareAudioRoute` / `releaseAudioRoute`)で開始・終了する。画面を消したまま終わらせないよう、戻してから監視を止める。近接センサーやwake lockが使えない端末では自動スリープの抑止だけを行う。`WAKE_LOCK`権限はmanifestに残っていたため追加不要。Gradle unit test 7件を`android-on-device-tts-test.yml`へ登録し、責務の所在と配線を固定するNode構造テスト6件を追加した。staging AAB 1066の実機で、顔へ近づけると画面が消え、離すと戻り、消えている間も会話が続き、通話終了で画面が戻ることを確認した。
 - 2026-07-13 commit `a8e51e3` で旧`AndroidTtfaTestPlugin`へ実装したが、2026-07-24 commit `294167e` の旧Plugin一括削除(2606行)で一緒に消えた。新実装に近接センサーのコードは1行も無い。iOS側は`IOSVoiceAudioRouteController`に残っている。
 - 影響は通話中に画面が点いたままになること。頬での誤操作と電池消費が増える。会話自体は成立する。
 - 2026-07-26のAndroid実機で発覚。オンデバイスTTSの各工程とは無関係で、3日前から壊れていた。
