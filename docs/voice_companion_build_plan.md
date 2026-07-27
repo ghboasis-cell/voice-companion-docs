@@ -1,8 +1,151 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.59 ／ 最終更新日: 2026-07-26**
+**版数: v5.66 ／ 最終更新日: 2026-07-26**
 
-（v5.59: iOS正式疑似通話の工程3「正式iOS Session／Controller骨組み」と工程4「接続・録音・usage・終了処理移行」を、
+（v5.66: iOS移行順序10「暫定経路削除・残存参照整理」を完了し、移行順序1〜10がすべて
+終わった。commit `2135bd6` でcloud MP3の受信・キュー・再生をiOSから削除し、Androidと
+同じ状態にそろえた。`IOSVoiceTtsController` は381行から139行になり、残るのは録音準備音の
+再生だけである。実行コードにcloud TTS/MP3再生の参照は0件。TestFlight実機で通話成立、
+録音準備音、合図後の録音再開、固定聞き返し、通話終了が従来どおり動くことを確認した。
+
+これでcloud TTSへの接続はアプリからもserverからも無くなり、iOSとAndroidは同じ作りに
+なった。本branchはmainへのマージ段階にある。Android近接センサーの復旧は本移行とは
+無関係のAndroid単独作業のため、マージ後に別branchで行う。
+
+本番Supabase・本番Edge Functionは未変更。／v5.65: iOS移行順序8「WebSocketオンデバイス専用契約」を完了した。commit `8d298ac` で
+server 側の不要な cloud MP3 生成を停止し、staging の `voice-turn` へ deploy して
+iOS・Android 両方の実機で会話成立と体感速度の非悪化を確認した。これで固定聞き返し・
+通常回答のいずれも `on_device_tts=1` の通話では cloud TTS へ接続しない。
+
+あわせて、Android実機でひとつ回帰を発見したので後続作業へ積んだ。通話中に端末を顔へ
+近づけても画面が消えない。2026-07-13 commit `a8e51e3` で旧`AndroidTtfaTestPlugin`へ
+実装した近接センサー制御が、2026-07-24 commit `294167e` の旧Plugin一括削除で
+新実装へ移されないまま消えていた。オンデバイスTTSの各工程とは無関係で、3日前からの
+回帰である。工程10のあとにAndroid単独作業として直す。
+
+残るのは移行順序10のみ。本番Supabase・本番Edge Functionは未変更。／v5.64: 後続作業を2つ積んだ。実装は行っていない。
+
+1件目。録音準備音(ピッ音)のON/OFF設定。spec v5.1のA8-2へ追記した。これまで仕様に
+記述がなく実装だけが存在していた音である。会話が機械的に感じられることを避けたい
+利用者が消せるようにする。設定画面の既存のデザインテーマ切替と同じ形で置き、
+Android・iOSで同じ動きとする。既定値はF1で決める。
+
+2件目。本番ビルドの配信設定検査。stagingには `scripts/verify_tts_bundle_config.py` の
+実行ステップがあるが、productionには無い。設定が欠けたまま本番ビルドを作っても
+止まらず、工程10でcloud MP3再生経路を削除したあとは完全に無音のアプリができる。
+リリース直前(フェーズ4)に、Codemagicの `production` 環境変数グループへ値が
+入っていることを確認したうえで追加する。未設定のまま追加すると本番ビルドが止まるため、
+確認を先に行う。
+
+あわせて、cloud TTSへの実接続の現状を整理した。固定聞き返しは `on_device_tts=1` の
+とき server がAivisを呼ばずテキストだけを送るため解決済み。通常回答は server が
+`on_device_tts` を見ずに毎ターンAivisを呼んでおり、Android・iOSとも受け取っても
+鳴らさないだけで、cloud TTSへの接続と費用は残っている。これを止めるのが工程8の残り。
+Android側にcloud MP3の受信口・再生コードは残っていない(旧Plugin削除済み、
+WebSocketListenerにbinary受信のoverrideなし)。工程10のiOS削除は、iOSをAndroidと
+同じ状態へそろえる作業である。／v5.63: iOS移行順序9「staging切替・Codemagic・TestFlight実機確認」を完了した。
+実機確認で見つかった2件を修正し、両OSで再確認した。
+
+1件目。commit `47859b9`。iOSは合成に失敗すると通話ごと終了していた。Android
+`VoiceCallRuntime` は PLAYBACK_FAILED でも通話を終わらせずturnを進める。iOSは
+工程8-8bでcloud MP3側の扱い(音が鳴る前の失敗は継続不能)を持ち込んでいたため、
+1文の解析失敗で通話が止まっていた。オンデバイスの失敗の受け口から emitFatal を外し、
+Androidと同じくturnを進めるだけにした。
+
+2件目。commit `d86d901` / `a80398b` / `8a390eb`。返事に`「」`や`・`が入ると、その文が
+まるごと無音になっていた。原因は共通Rust実装の `punctuation_phone` がモデルの扱える
+「。、！？」以外の記号をエラーとして返し、文の解析ごと失敗させていたこと。返り値を
+Option へ変え、読み上げに使えない記号は読み飛ばすようにした。飛ばすときは音・
+アクセント・文字数・BERTへ渡す文字の4つをまとめて飛ばし、`validate_arrays` の
+文字と音の対応を保つ。表示される文は変えない。`…` はNFKCでピリオド3つへ開かれるため
+読み飛ばし対象ではなく、間として読む。system promptは変更していない。
+本件はAndroid・iOS共通のRust実装の修正であり、iOS工程の固定方針「Android実装を
+変更しない」に対する明示合意のうえでの例外である。
+
+無音の返事が続くとユーザーが黙り、STT失敗の聞き返しが3回続いて通話が停止していた。
+2件目の修正で根本が解消し、聞き返しの連鎖も起きなくなった。
+
+CI: GitHub Actions run 30210099962 で Rust host tests 6件、Android JNI build、
+Gradle unit tests がすべてPASS。Android staging AAB run 30211276533 は versionCode
+1065 を生成し成功。iOSはCodemagic stagingでAppTestsと署名付きIPA生成がPASS。
+Node自動テストは490件PASS。
+
+実機確認(commit `8a390eb`): iOSで発信、疑似着信応答、通常会話、固定聞き返し、
+録音準備音、receiver/speaker切替、近接センサー、interruption(タイマー割り込みで
+通話終了画面へ遷移)、通話終了、コイン減少、記号を含む返事の読み上げをすべて確認した。
+`「桜」＋「音」`が画面には記号付きで表示され、音声では記号を無視して正しく読まれた。
+AndroidはAAB 1065で記号の修正と既存動作の非破壊を確認した。
+
+移行順序7と9を`[x]`とする。8はserver側の不要なcloud MP3生成停止が残るため`[~]`を
+維持する。10は未着手。specは変更していない。実装コード以外のAndroid、Edge Function、
+DB、migration、RPC、R2、env、secret、production、mainは変更していない。／
+v5.62: iOS正式疑似通話のオンデバイスTTS接続を工程8-8a / 8bとして実装し、
+commit `f6a0db1`でモデル配信設定の受け取りと`on_device_tts=1`送信、
+commit `9fd02f9`でモデル取得・導入・読み込み、LLM文単位合成・順序付き再生、
+固定聞き返しテキストの合成、cloud MP3の再生抑止、再生完了後の録音復帰判定を接続した。
+Codemagic stagingはbranch `agent/ios-stage5-jpreprocess`、commit `9fd02f9`を
+7分39秒で完走し、`Run iOS unit tests (AppTests)`、署名付きIPA生成、
+埋め込みInfo.plistのiPhone専用・向き4種・`.xctest`非混入検査がすべてPASSした。
+生成された`App.ipa`は43.25MB。
+TestFlight実機では初回通話の1回目に「通話サーバーへ接続できません。」が出たが、
+再試行では長い初回モデル取得後に通常回答のオンデバイス音声が鳴り、
+以降の複数ターンは大きな待ちなしで音声が続いた。cloud MP3との二重再生も報告されていない。
+これによりiOS実機arm64での実モデル取得・読み込み・合成・再生と、
+通常回答後に次ターンへ戻る基本経路は成立確認済みとする。
+最初のWebSocketエラーとモデルダウンロードの因果関係は診断値で確認できていないため、
+ダウンロードが原因だったとは断定せず、この推測だけを根拠に接続順序は変更しない。
+
+ただし、仕様書A8-3の完成仕様は「初回・追加のキャラ選択時にモデルを取得し、
+Android・iOSで同じ動きにする」である。現行は通話開始時取得の暫定状態であり、
+追加キャラ選択の本実装も未完了のため、今回のiOS成立確認へ事前取得実装を混在させない。
+キャラ追加導線の実装時に、両OS共通のWeb側入口から選択直後の取得・進捗・失敗・再試行を扱い、
+通話開始時の初回取得を廃止する。導入済みモデルをアプリ・端末再起動後も再利用する
+native側の永続保存とcache判定は現行実装を維持する。
+移行順序7は通常回答の実機再生まで確認済みだが固定聞き返し等の総合確認が残るため`[~]`、
+移行順序8はclient側のオンデバイス契約とcloud MP3再生抑止まで成立したが、
+server側の不要なcloud MP3生成停止が残るため`[~]`、移行順序9・10は未完了とする。
+specをv5.0へ更新し、本更新では実装コード、Android、Edge Function、DB、migration、
+RPC、R2、env、secret、Codemagic、production、mainを変更しない。／v5.61: iOS正式疑似通話の工程6「iOSモデルbundle管理」を完了した。
+Android `TtsModelBundleInstaller` / `TtsModelDownloader` と同じ判定へ揃えた
+`IOSTtsModelBundleManifest`(検証のみ)・`IOSTtsModelBundleInstaller`(展開・照合・差し替え)・
+`IOSTtsModelDownloader`(取得・cache再利用・打ち切り)を追加した。同じbundleファイルを
+両OSが読むため、schema_version・必須ファイル・license必須・サイズ上限(2GiB)・
+storage余裕(16MiB)・DL上限(3GiB)・進捗段階名をすべてAndroidと一致させ、
+`tests/iosTtsModelBundle.test.mjs`が両者の食い違いを検出する。
+一時領域へ全展開し全ファイルのSHA-256とサイズを照合してからatomicに差し替え、
+差し替え失敗時はbackupから復元する。他キャラ・共通bundleには触れない。
+Zip Slip対策はパス文字列検査と実パスでの封じ込め確認の二重で行い、
+symlink entryは中身を検証できないため拒否する(iOS側の追加防御)。
+保存先はApplication Supportとし、モデルは配信元から取り直せるため
+iCloudバックアップ対象から除外する(iOS固有の判断)。
+ZIP読み取りはZIPFoundation 0.9.20をexactVersionで導入した(iOSにZIP読み取りの
+標準機能が無いため)。展開先の決定と安全確認は自前で行い`unzipItem`は使わない。
+Codemagic staging index 41で1件失敗し、`safeOutputURL`が絶対パスを単体で
+弾けていないことを検出して修正した(`appendingPathComponent`は先頭の"/"を
+絶対パスとして扱わず連結するため封じ込め判定を通過していた。実害は無いが
+単体で成立しない防御は防御と呼べないため修正)。index 42で全68件がPASS。
+App.ipaは14.26MB→14.52MB。
+**配信先(R2)が未整備のため、実際のモデル取得・インストールは未確認である。**
+確認済みなのは壊れたbundleの拒否・cache再利用・打ち切り・復元の各挙動まで。
+実配信での確認は工程9で行う。／v5.60: iOS正式疑似通話の工程5「ONNX Runtime・共通日本語frontend基盤」を完了した。
+日本語frontendはAndroidと同じRust実装(`android/app/src/main/rust/jpreprocess_frontend`)を
+XCFramework化して共有し、Swiftでの重複実装は行わなかった。C ABI越しの薄い橋渡し
+`IOSJapaneseFrontend`だけをSwift側に置き、G2P・アクセント推定はSwiftに一切持たせていない。
+ONNX Runtimeはmicrosoft/onnxruntime-swift-package-managerをexactVersion 1.24.2で導入した
+(Androidの1.22.0とは版が異なる。iOS向けSwift Packageに1.22.0のtagが存在しないため。
+同一モデルをopset互換範囲で実行する)。セッション管理`IOSOnnxRuntimeSessions`は
+Android `OnDeviceTtsEngine`と同じく共通BERTを常駐させ、キャラ側TTSはキャラ切替時のみ
+読み直し、文・turnごとの再生成を行わない。XCFrameworkはビルド生成物として扱い
+commitせず、Xcodeのbuild phaseで組み立てる(Androidがgradleで行っているのと同じ位置づけ。
+本番workflowはjpreprocessの明示stepを持たないため、workflow側ではなくXcode側で用意する)。
+Codemagic staging index 39でXCFramework・modulemapの解決とSwift側10件のテストを、
+index 40でONNX Runtimeのリンクと全30件のテストを確認した。App.ipaは5.36MB→5.86MB→14.26MBと
+推移し、ONNX Runtimeが実際に組み込まれていることを確認した。日本語frontendは工程7で
+実際に呼び出すまで大部分がstripされるため、サイズはその時点で増える。
+自動テストはsimulator実行だが、両ライブラリをリンクした状態のipaで、実機の発信・会話・終話・
+再通話が従来どおり動作することを確認した(2026-07-26)。ただし両ライブラリのコード自体は
+呼び出し箇所がまだ無いため実機では実行していない。実行の確認は工程7以降で行う。
+合成そのもの(テンソル組み立てと推論実行)は工程7で実装する。／v5.59: iOS正式疑似通話の工程3「正式iOS Session／Controller骨組み」と工程4「接続・録音・usage・終了処理移行」を、
 TestFlight実機確認まで完了した。6 Controllerへの責務分割とその後の実処理移設を行い、Codemagic staging index 30〜33で
 Swiftコンパイルを確認したうえで、実機で発信・会話継続・スピーカー/受話口切替・近接センサーによる画面消灯・聞き返し・
 録音準備音・終話・コイン消費を確認した。実機で3件の不具合を検出して修正した。
@@ -505,7 +648,7 @@ PR #28/#29後の整理:
 
 次工程はPR #69のマージ後、別branch・別PRで「iOS正式疑似通話・オンデバイスTTS接続」。PR #69は2026-07-24にmainへマージ済み(merge commit `2454f2482ada367bd7e1de04223dda1f1554ce7a`)であり、以降は下記のiOS移行順序で進める。
 
-現在の位置: 移行順序4まで完了(2026-07-26、実機確認済み)。次に行う工程は5「ONNX Runtime・共通日本語frontend基盤」。iOSは現在クラウド音声のため全キャラ共通の声で、キャラ別の声になるのは工程7以降。
+現在の位置: 移行順序1〜10すべて完了(2026-07-26)。工程1〜4は実機確認済み、工程5・6はCodemagic staging index 39・40・42の自動テストで確認済み。commit `8a390eb`のstaging buildとTestFlight実機通話により、iOS実機arm64での実モデル取得・読み込み・通常回答のオンデバイス合成・再生・固定聞き返し・録音準備音・割り込み・通話終了・usageまで確認した。同じcommitのAndroid staging AAB 1065で、共通Rust実装の修正が両OSに効いていることも確認した。iOS正式疑似通話・オンデバイスTTS接続は完了であり、mainへのマージ段階にある。キャラ選択時の両OS共通事前取得はA8-3の完成仕様だが、追加キャラ選択の本実装と合わせる後続作業とし、工程8の成立確認へ混在させない。
 
 **正式iOS疑似通話・オンデバイスTTS接続の前提(2026-07-25・v5.57):**
 
@@ -540,12 +683,54 @@ socketの生成・受信ループ・close・自動再接続の予約を接続Con
 usageの計測開始はSessionが仲介する(Android `ControllerBindings`相当)。stale callback拒否はSession境界の
 `isStaleCallback`と各Controllerの世代判定を併用する。実機確認で3件の不具合を検出・修正済み(v5.59の変更履歴参照)。
 通話中の電話着信による割り込みは未確認。
-5. [ ] ONNX Runtime・共通日本語frontend基盤: ONNX Runtime iOSを導入する。日本語frontendはRust実装のiOS static libraryまたはXCFramework化を第一候補として検証し、Swiftでfrontend全体を重複実装する案は共有が不能と判明した場合に限る。Android fixtureとの出力一致を自動テストで確認する。model sessionを文・turnごとに再生成しない。
-6. [ ] iOSモデルbundle管理: common BERT bundleとcharacter bundleを`URLSession` downloadで取得し、manifest検証、SHA-256検証、size検証、Zip Slip対策を行う。保存先はApplication Supportとし、一時領域で完全検証してから原子的に切替え、失敗時はrollbackする。取得済みbundleはcache再利用し、common bundleの再DLを防止する。
-7. [ ] iOSオンデバイスTTS: 通常回答を文単位で合成し順序どおり再生する。固定聞き返しと録音準備音を同経路で扱い、generationによるstale処理拒否を行う。usageは通常回答の実再生時間だけ加算し、固定聞き返しと録音準備音は非課金とする。cloud TTS fallbackは実装しない。
-8. [ ] WebSocketオンデバイス専用契約: `on_device_tts=1`、`stt_recovery_prompt`、LLM text eventを用いる契約へ揃え、iOS側がcloud MP3を再生しないようにし、server側の不要なcloud MP3生成を停止する。iOSローカルTTSの接続成立前にcloud MP3を止めない。Edge Function変更が必要な場合は、この工程の開始前に対象と影響を報告する。
-9. [ ] staging切替・Codemagic・TestFlight実機確認: Swift unit test、TTS env検査、archive、IPA検査を通し、TestFlightで配布する。実機では発信、疑似着信応答、録音、AI通常音声、固定聞き返し、録音準備音、receiver/speaker切替、近接センサー、interruption、usage、終了を確認する。
-10. [ ] 暫定経路削除・残存参照整理: cloud MP3再生処理、旧一括Plugin責務、fallback、不要listener、不要テストを削除し、実行コード内のcloud TTS fallback参照が0件であることを確認する。
+5. [x] ONNX Runtime・共通日本語frontend基盤: ONNX Runtime iOSを導入する。日本語frontendはRust実装のiOS static libraryまたはXCFramework化を第一候補として検証し、Swiftでfrontend全体を重複実装する案は共有が不能と判明した場合に限る。Android fixtureとの出力一致を自動テストで確認する。model sessionを文・turnごとに再生成しない。
+第一候補のXCFramework化が成立したため、Swiftでの重複実装は行っていない。`jpreprocess_frontend`crateへ
+iOS向けstaticlibとC ABIを足し(JNIは`#[cfg(target_os = "android")]`で閉じたまま)、
+`scripts/build_jpreprocess_ios.sh`が実機・simulatorの2slice構成でXCFrameworkを作る。
+ヘッダとmodulemapは`ios/jpreprocess/include`の1か所だけに置き、XCFramework側へは同梱しない
+(同一moduleの二重定義を避けるため)。Android fixtureとの一致は
+`IOSJapaneseFrontendTests.testParsesSameJsonAsAndroid`が`JpreprocessG2pTest`と同一の期待値で確認し、
+`tests/iosJapaneseFrontend.test.mjs`が両者の片側だけの変更を検出する。
+model sessionの非再生成は`IOSOnnxRuntimeSessions`の読み込み回数カウンタで検証する。
+Codemagic staging index 39・40でテスト30件のPASSを確認し、実機でリンク後のアプリ動作(発信・会話・終話・再通話)も確認した。両ライブラリ自体の実機実行は工程7以降。
+6. [x] iOSモデルbundle管理: common BERT bundleとcharacter bundleを`URLSession` downloadで取得し、manifest検証、SHA-256検証、size検証、Zip Slip対策を行う。保存先はApplication Supportとし、一時領域で完全検証してから原子的に切替え、失敗時はrollbackする。取得済みbundleはcache再利用し、common bundleの再DLを防止する。
+Android正本と同じ判定へ揃えた3ファイル(`IOSTtsModelBundleManifest` / `IOSTtsModelBundleInstaller` /
+`IOSTtsModelDownloader`)で実装した。cache再利用はcommonがversion変更時のみ、characterは未取得か
+`requires_common_version`不一致時のみ再取得する。打ち切りは`CancelHandle`で即座に止め、
+通信エラーではなく`canceled`として扱う(通話終了を失敗として診断に出さないため)。
+XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic staging index 42で全68件PASS。
+実配信からの取得はv5.62のTestFlight実機通話で確認済み。固定聞き返し等を含む総合確認は工程9に残る。
+7. [x] iOSオンデバイスTTS: 通常回答を文単位で合成し順序どおり再生する。固定聞き返しと録音準備音を同経路で扱い、generationによるstale処理拒否を行う。usageは通常回答の実再生時間だけ加算し、固定聞き返しと録音準備音は非課金とする。cloud TTS fallbackは実装しない。commit `9fd02f9`でモデル取得・導入・読み込み、通常回答と固定聞き返しの合成配線、順序付き再生、実再生時間usage、stale拒否、再生完了後の録音復帰を実装した。合成失敗時に通話ごと終了していた不具合はcommit `47859b9`でAndroid `VoiceCallRuntime` と同じ「turnを進めるだけ」へそろえた。工程9のTestFlight実機で通常回答、固定聞き返し、録音準備音、割り込み、複数ターン継続を確認し、cloud MP3との二重再生がないことも確認した。録音準備音は従来のローカルcueを維持しており、AI通常回答のcloud MP3 fallbackには戻さない。
+8. [x] WebSocketオンデバイス専用契約: `on_device_tts=1`、`stt_recovery_prompt`、LLM text eventを用いる契約へ揃え、iOS側がcloud MP3を再生しないようにし、server側の不要なcloud MP3生成を停止する。iOSローカルTTSの接続成立前にcloud MP3を止めない。commit `f6a0db1` / `9fd02f9`でclient側の契約、LLM text・固定聞き返しtextの受信、cloud MP3の再生抑止まで実装し、実機でオンデバイス音声を確認した。二重再生の明示確認は工程9に残す。ただしserverは現在もcloud MP3を生成・送信しており、iOSが受信後に捨てている。commit `8d298ac`で server 側の不要な cloud MP3 生成を停止した。`runLlmAndTts` へ `onDeviceTts` を渡し、真のときは synthesize を呼ばず null を返し、sendAudio は null を 送信しない。文の切り出し・1文ずつの llm テキスト送信・送信順・`done` の流れ・失敗時の扱いは `on_device_tts=0` のときと同じに保つ。staging の `voice-turn` へ deploy し、iOS・Android 両方の 実機で会話が成立すること、体感速度に変化がないことを確認した。本番Edge Functionは未変更。
+9. [x] staging切替・Codemagic・TestFlight実機確認: Swift unit test、TTS env検査、archive、IPA検査を通し、TestFlightで配布する。実機では発信、疑似着信応答、録音、AI通常音声、固定聞き返し、録音準備音、receiver/speaker切替、近接センサー、interruption、usage、終了を確認する。commit `8a390eb`のCodemagic stagingでAppTestsと署名付きIPA生成がPASSし、TestFlight実機で上記すべてを確認した。割り込みはタイマーで再現し、通話が終了して中断画面へ遷移することを確認した。usageはコイン残高の減少で確認した。確認中に見つかった合成失敗時の通話終了(`47859b9`)と、記号を含む文が無音になる共通Rust実装の不具合(`8a390eb`)を修正し、両OSで再確認した。Android側はstaging AAB 1065で記号の修正と既存動作の非破壊を確認した。
+10. [x] 暫定経路削除・残存参照整理: cloud MP3再生処理、旧一括Plugin責務、fallback、不要listener、不要テストを削除し、実行コード内のcloud TTS fallback参照が0件であることを確認する。commit `2135bd6`で`IOSVoiceTtsController`から再生キュー・`IOSVoiceQueuedAudio`・`AVAudioPlayer`によるMP3再生・準備token・初回再生観測・実再生時間算出・失敗後の継続を削除し、381行から139行にした。残したのは録音準備音の再生と完了通知だけ。Pluginは音声データの受信をno-opにし(古いserverが送ってきても捨てる)、cloud側のdelegate実装6つと`enqueueAudio`を削除した。`first_audio_started`はオンデバイスの再生開始から出すよう移し、`AVAudioPlayer`内部の4段階は記録元が消えたため`CALL_TIMING_STAGES`から外した。画面文言「Aivis TTS生成中…」を「音声を作っています…」へ変えた。cloud経路を固定していた自動テスト17件を、意図を保ったままオンデバイス側へ向け直した。実行コードに`IOSVoiceQueuedAudio`・`enqueueAudio`・MP3のplayer生成は0件。TestFlight実機で通話成立、録音準備音、合図後の録音再開、固定聞き返し、通話終了が従来どおり動くことを確認した。
+
+**Android近接センサーの復旧（移行時の移し忘れ・Android単独）:**
+
+- [ ] 通話中に端末を顔へ近づけたとき画面を消す機能を、新しい`voicecall`実装へ戻す。
+- 2026-07-13 commit `a8e51e3` で旧`AndroidTtfaTestPlugin`へ実装したが、2026-07-24 commit `294167e` の旧Plugin一括削除(2606行)で一緒に消えた。新実装に近接センサーのコードは1行も無い。iOS側は`IOSVoiceAudioRouteController`に残っている。
+- 影響は通話中に画面が点いたままになること。頬での誤操作と電池消費が増える。会話自体は成立する。
+- 2026-07-26のAndroid実機で発覚。オンデバイスTTSの各工程とは無関係で、3日前から壊れていた。
+
+**録音準備音のON/OFF設定（A8-2・両OS共通）:**
+
+- [ ] 設定画面に「録音準備音を鳴らす／鳴らさない」を追加する。既存のデザインテーマ切替と同じ形で置く。既定値はF1で決める。
+- [ ] 設定をAndroid・iOSのnativeへ渡し、両OSで同じ動きにする。片OSだけ先行して製品挙動を変えない。
+- [ ] 鳴らさない設定のときも、録音再開のタイミング自体は変えない。音を出さないだけとする。
+
+**本番ビルドの配信設定検査（リリース直前・フェーズ4）:**
+
+- [ ] production workflowへ、stagingと同じ `scripts/verify_tts_bundle_config.py` の実行ステップを追加する。現在stagingにはあるがproductionには無い。
+- [ ] 追加前にCodemagicの `production` 環境変数グループへ `VITE_TTS_COMMON_BUNDLE_URL` / `VITE_TTS_COMMON_VERSION` / `VITE_TTS_CHARACTER_BUNDLES` が入っていることを確認する。未設定のまま追加すると本番ビルドが止まる。
+- [ ] 工程10でcloud MP3再生経路を削除したあとは、配信設定が欠けたビルドは完全に無音になる。検査なしで本番ビルドを作らない。
+
+**キャラ選択時のモデル事前取得（A8-3完成仕様・追加キャラ導線と同時に実装）:**
+
+- [ ] 初回キャラ選択で選択を確定した時点に、共通bundleと選択キャラbundleの取得を開始し、通話開始前に取得・検証・導入を完了できるようにする。
+- [ ] 追加キャラ選択の本実装で、選択を確定した時点に未取得のキャラbundleを取得する。staging検証用の暫定追加UIを完成版の追加キャラ導線とは扱わない。
+- [ ] Web側に両OS共通のモデル準備入口と進捗・失敗・再試行表示を設け、Android・iOSのnative実装を同じ契約へ接続する。片OSだけ先行して製品挙動を変えない。
+- [ ] 導入済みの共通bundle・キャラbundleは再利用し、通常のアプリ再起動・端末再起動・同じキャラの再選択では再ダウンロードしない。
+- [ ] 両OSの通話開始時に行っている未取得モデルの初回ダウンロードを廃止する。通話中は導入済みモデルの読み込み・warm-upだけを行う。
 
 - [ ] 通知（A10）: デイリー生成通知（通知文＋入口メッセージの事前生成）、`notification_candidates` / `notification_logs` への保存、同じ文脈IDでの通知文・入口メッセージ連携、関係値重み配分＋lover毎日確定、キャラ個別ON/OFF、`device_installations` を使った有効端末送信、重複防止
 - [ ] イベント・告白（A11）: 発生条件（サーバルール）、通常通知→疑似LINE入口メッセージ→電話していい？→OK→アプリ内疑似着信→応答→疑似電話の導線、告白・関係状態変更・呼び方変更の明示同意フロー、pending状態、未応答時の戻し/保留、lover化と文脈変化、iOS/Android共通の告白導線
