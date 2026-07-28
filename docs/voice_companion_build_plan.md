@@ -1,8 +1,197 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.67 ／ 最終更新日: 2026-07-27**
+**版数: v5.100 ／ 最終更新日: 2026-07-28**
 
-（v5.67: Android近接センサーの復旧を完了した。commit `4cada75`。通話中に端末を顔へ
+（v5.100: 記憶パイプライン実装後のstaging `voice-turn` v16 ACTIVE後に、確定15ターンの
+通話がcompletedまで継続し、10往復または12,000文字で開始する通話内一時要約のターン条件を
+実機経路で通過したことをDB行数から確認した。サーバは古い履歴だけを要約して直近4往復を残し、
+Android/iOS両方が同じ`history_summary`を受信・次ターンへ再送・終話時破棄する契約を自動検証済み。
+箇条書き調の自然さ、日次モデル比較、モーニング固定WAV正式化は機能成立後の品質・素材工程へ分離し、
+PR #76のマージ条件には含めない。プロンプトとモデルは本更新で変更していない。
+／v5.99: stagingで2026-07-28 03:40〜05:30 JSTの記憶cron 7件が実時刻にすべて成功し、
+7月27日分4件の日次runが初回完了、待機・実行中・再試行待ち0件であることを確認した。
+食べ物の会話は日次要約と長期記憶へ入り、翌日の実機会話でも保持を確認した。一方、過去会話を
+箇条書きのように並べる不自然さは品質課題として残す。本文のない終了通話16件が正式要約の
+`pending`を塞いでいたため、通話・ログ・要約行を削除せず`empty`へ終端化し、確定済み本文の遅着時は
+DB triggerで`pending`へ戻すmigrationをstagingへ適用した。既存16件は`empty`、`pending`は0。
+ROLLBACK付き遅着検査で`empty`から`pending`への復帰を確認し、staging `memory-worker` v2をACTIVE化した。
+モーニングの仮固定WAVは後続素材工程で、現在より長く内容のある正式文言へ差し替える。
+／v5.98: v5.97の署名済みIPAをTestFlight実機で確認し、iOSモーニングのAlarmKit連携を含む
+一連の動作に問題がないことを確認した。iOS実装・native compile・実機確認は完了。
+／v5.97: availability修正commit `0711b78`のCodemagic iOS Staging Build
+`6a686234b6f0c284b5aa280e`（index 56）はSUCCESSし、AppTestsを含むworkflow完走と
+署名済み`App.ipa`（43.30 MB）の生成を確認した。iOS native compileは完了し、残りはTestFlight実機確認。
+／v5.96: commit `1ae2106`のCodemagic iOS Staging Build
+`6a685fda8134001e1f377f10`はAppTestsのSwift module emitで失敗した。deployment targetのiOS 15に対し、
+AlarmKit製品コードの`localeWeekday`だけavailability指定がなく、iOS 16以降の`Locale.Weekday`を
+参照していたことが原因。呼び出し元と同じiOS 26限定helperとして明示した。再buildは未実施。
+／v5.95: `voice_companion_alarmkit_validation_2026-07-02.md`の検証済み経路を正本として、
+Androidで完成した共通WebフローへiOS AlarmKit bridgeを接続した。warm起動時のAlarmKit context取得、
+現在鳴っているnative alarmだけの停止／スヌーズ、`応答`のAlarmKit停止完了後の既存AI通話合流、
+固定メッセージの共通1.0秒待機とiOS近接監視・自動スリープ抑止・受話口／スピーカー切替を実装した。
+設定UI、DB同期、第一声準備、通話、履歴、課金、固定音声選択はAndroidと同じTypeScript層を維持し、
+カスタムAlarmKit音、Web Audioループ、iOS専用業務処理は追加していない。全531テスト、TypeScript検査、
+Web build、`npx cap sync ios`、`git diff --check`はPASS。iOS native compileとTestFlight実機確認は未実施。
+／v5.94: v5.93のAndroid実機で近接消灯が従来より早くなったことを確認した。消灯は固定音声開始後だが
+現段階の機能として採用し、Androidモーニングの機能実装はテスト端末で完了。通話画面デザイン・
+ボタン配置と固定WAVの長さ・正式文言は後のデザイン・素材工程へ送り、次はiOSモーニングへ進む。
+／v5.93: v5.92を含む署名済みstaging AABをAndroid Staging AAB run `30334832842`で作成し、
+artifactへ保存した。残る確認は固定メッセージで近接消灯が音声終盤ではなく開始前後に行われるかの実機確認。
+／v5.92: v5.91のAndroid native compileと音声通話テストをAndroid On-Device TTS Test
+run `30334620063`で確認しPASS。署名済みstaging AABと実機再確認は未実施。
+／v5.91: v5.90の実機で全画面表示と通知からの応答はPASS、AI第一声は体感上の劣化なし。
+固定メッセージの近接消灯が音声終盤まで遅れるため、近接監視を通話画面表示直後へ移し、1.0秒待機と
+再生準備をまたいで維持した。全529テスト、TypeScript検査、Web buildはPASS。Android native compile、
+署名済みstaging AAB、実機再確認は未実施。
+／v5.90: v5.89までの全画面・通知応答・固定メッセージ近接消灯・AI第一声準備修正を含む
+署名済みstaging AABをAndroid Staging AAB run `30332303567`で作成し、artifactへ保存した。
+残るAndroid確認は4症状の実機再確認。
+／v5.89: v5.88のAndroid native compileと既存音声通話unit testsを
+Android On-Device TTS Test run `30332108765`でPASSした。署名済みstaging AABと、
+全画面・通知応答・固定メッセージ近接消灯・AI第一声時間の実機再確認は未実施。
+／v5.88: Android実機で、全画面疑似着信が不安定、通知の`応答`が設定画面を表示、
+固定メッセージで近接消灯しない、AI第一声の短縮を体感できない不具合を確認した。着信Activityを
+専用taskへ分離し、新着Intent listenerと通知からの自動応答を追加した。固定メッセージへ通常通話と
+同じ近接画面制御を接続した。第一声はユーザーデータ読込前から準備し、応答時の世代無効化をやめ、
+通話開始処理と並行中なら最大0.5秒だけ合流を待つ。全529テスト、TypeScript検査、Web buildはPASS。
+Android native compile、署名済みstaging AAB、4症状の実機再確認は未実施。
+／v5.87: v5.86までの1.0秒待機とAI第一声先行生成を含む署名済みstaging AABを
+Android Staging AAB run `30329109721`で作成し、artifactへ保存した。残るAndroid確認は、
+固定メッセージの1.0秒待機の体感と、応答から第一声再生までの実機時間。
+／v5.86: v5.85のWeb・TypeScript・全テスト・Android native compileを完了した。
+Android On-Device TTS Test run `30328884570`はPASS。`voice-turn`はstaging version 18へ
+反映しACTIVEを確認した。第一声先行生成を含む認証済み実機確認、iOS native compile、
+署名済みstaging AABは未実施。
+／v5.85: `メッセージを再生`の待機を0.8秒から1.0秒へ変更した。単独でAABを作り直さず、
+モーニング着信中のAI第一声先行生成を同時に実装した。DB残高が通話最低額以上の場合だけ
+`voice-turn`の認証付きHTTP経路で日時・関係性・記憶を含む第一声文章を準備し、応答時に
+準備済みならWebSocketへ渡してLLM再生成を省く。準備失敗・未完了は従来生成へ戻し、応答時の
+最新残高確認、拒否時のcall未作成・コイン未消費は維持する。ローカル検証、staging deploy、
+両OS native compile、AAB、実機確認は未実施。
+／v5.84: v5.83の0.8秒待機を含む署名済みstaging AABをAndroid Staging AAB
+run `30327306505`で作成し、artifactへ保存した。残る確認は0.8秒待機の実機体感。
+／v5.83: 実機で全画面疑似着信と通知の操作ボタンを確認した。`メッセージを再生`は受話器を
+耳へ当てる前に冒頭が始まるため、通常通話画面の表示後0.8秒待ってから固定音声を開始するようにした。
+待機中に終了した場合は再生せず、再再生ボタンと自動ループは追加しない。Web/構造テスト、
+TypeScript検査、Web build、修正版AAB、0.8秒の実機確認は未実施。
+／v5.82: v5.81の全画面優先修正を含む署名済みstaging AABをAndroid Staging AAB
+run `30293713508`で作成し、artifactへ保存した。残るAndroid確認は修正版AABの実機再確認。
+／v5.81: v5.80の全画面優先修正をAndroid On-Device TTS Test run `30293438751`で
+native compileし、既存の音声通話テストを含めてPASSした。修正版AABと全画面の実機再確認は未実施。
+／v5.80: Android実機で`応答`のAI第一声と`メッセージを再生`の通常通話画面遷移を確認した一方、
+設定画面を表示してスリープした場合に全画面疑似着信へ入らず、停止もできない経路が見つかった。
+全画面表示の実効許可が有効化条件から漏れていたため、Android 14以降では未許可時に端末設定を開き、
+許可後の再保存を必須にした。鳴動時はfull-screen intentに加えて専用Activityの直接起動も試し、
+通知には`応答`と`停止`を追加した。Web/構造テスト、TypeScript検査、Web buildはPASS。
+Android native compileと修正版AAB、実機再確認は未実施。
+／v5.79: v5.78のAndroid native compileとstaging反映を完了した。Android On-Device TTS Test
+run `30288057765`でnative compile、既存音声通話テスト、AI第一声のuser時間0ms／実再生時間だけを
+加算するusageテストをPASSした。staging `voice-turn` version 17へAI第一声生成をdeployし、
+ACTIVEを確認した。Android staging AAB workflow run `30288366458`で署名済みAABのbuildとartifact
+保存に成功した。残る確認はAndroid実機での`応答`／`メッセージを再生`両経路とiOS native compile
+である。productionは変更していない。
+／v5.78: モーニング疑似着信後の2経路をspec v5.7へ合わせた。`応答`は固定WAVを使わず、
+現在日時・関係性・記憶を含む既存の通話system promptからAIが毎回短い第一声を生成する。
+両OSとも第一声の再生完了までは録音せず、AI音声の実再生時間だけを通常通話usageへ加え、
+次のturnから通常会話へ進む。`メッセージを再生`は無料の保存済みWAVを通常の通話画面で
+受話口／スピーカー切替付きで再生し、ユーザーが終了するまで画面を維持する。終了後はどちらも
+既存と同じ「通話」見出しを使う。Androidで固定音声再生中だけ残っていたforeground通知経路を
+削除した。Web/Function/構造テスト、TypeScript検査、Web buildはPASS。Android native compile、
+iOS native compile、staging `voice-turn` deploy、実機確認は未実施。
+／v5.77: 固定モーニング音声の生成対象から花音が漏れていたため、花音の正式AIVMXモデルを
+manifestへ追加し、7キャラ×3本＝21本を再生成した。GitHub Actions run `30280685835`で生成・
+WAV検証に成功し、花音3本のartifact実体も確認した。手動実行時だけ生成済みartifactから桜音・花音の
+6本を選別するstaging専用R2アップロード処理を追加し、run `30282262036`でアップロード、R2上の
+サイズ、公開URLからの再取得、SHA-256一致を確認した。staging DBへ
+`20260727210000_add_morning_alarm_product_fields.sql`だけを適用し、`fixed_voice_assets`へ
+桜音3件・花音3件を登録した。Android On-Device TTS Test run `30280153878`は最新のキャラ選択時
+事前取得実装を含めてSUCCESS。productionは変更していない。文言は引き続き仮置きである。
+／v5.76: キャラ選択確定時に、会話用TTSの共通bundle・キャラbundleと固定モーニング音声3本を
+両OSで準備し、すべて成功した後だけ選択を保存する経路を追加した。導入済みファイルは再利用し、
+モーニング設定時は対象キャラの不足分だけ再確認する。取得中は「音声を準備しています…」と表示し、
+失敗時は選択を保存せず再試行できる。R2へ配置済みのTTSキャラbundleは現時点で桜音・花音の2人だけ
+であることをmanifestから再確認し、未配信キャラを選択可能に表示しない。固定音声のR2／DB登録と
+staging反映はまだ行っていない。
+／v5.75: 仮文言3種類を6キャラの正式なAIVMXモデルで生成する専用workflowを追加した。
+モデルUUID・speaker UUID・SHA-256・ACML 1.0をmanifestへ固定し、公式AivisSpeech Engineで
+18本のWAVを生成する。GitHub Actions run 30271054793で、6キャラ×3本、ファイルサイズ、
+0.3〜30秒の長さ、WAV読込をすべてPASSし、7日保持のartifactへ保存した。これは生成検証だけで、
+R2配置、`fixed_voice_assets`登録、staging／本番反映は行っていない。文言は仮置きのため、
+配信前に内容と実音声を確認して差し替え可能とする。
+／v5.74: 「メッセージを再生」は毎日同じ1本ではなく、キャラごとに固定音声3本を用意し、
+直前に再生した1本を避けて選ぶ仕様へ更新した。当時は音声をアラーム同期時に端末のアプリ専用領域へ
+HTTPSから保存し、朝は保存済みファイルだけを再生する。Androidはforeground service、
+iOSはAVAudioPlayerでローカル再生し、会話AI、WebSocket、マイク、call作成、コインを使わない。
+`fixed_voice_assets.variant_key`と同一キャラ・用途・関係性内の一意制約を追加した。実際の
+6キャラ×3本の音声生成・R2配置・DB登録は未実施。
+／v5.73: spec v5.4のモーニングコールをローカル実装した。設定画面、複数アラーム、
+曜日別週次／一回のみ、キャラ、個別ON/OFF、1〜60分スヌーズ、回数制限、バイブ有無、
+チャット／通話後の確認候補、確認後だけ登録するDB RPCを追加した。AndroidはAlarmManagerの
+正確なアラーム、再起動／時刻変更後の再登録、foreground alarm音、専用BridgeActivityの
+全画面疑似着信を実装した。iOSは検証済みのAlarmKit system sound継続経路を使い、system画面を
+「停止」「着信を見る」の2操作、アプリ内を「応答」「メッセージを再生」「拒否」「あとで」
+とした。固定メッセージは会話AIへ接続しない境界まで実装したが、キャラ別固定音声素材がまだ
+存在しないため再生自体は明示的な未完成状態である。
+
+ローカルではTypeScript、Web build、3 Edge Function bundle、Node全46ファイル、
+`git diff --check`をPASSした。ローカル環境にはAndroid Gradle wrapperとXcodeがないため、
+Android/iOS native compile、staging反映、実機確認は未実施。本番は未変更。
+／v5.72: 次機能を課金からモーニングへ変更し、spec v5.4で製品仕様を確定した。
+スマホ標準アラームの代替として、複数登録、曜日別週次／一回のみ、キャラ、個別ON/OFF、
+1〜60分スヌーズ、1/3/5回または無制限、バイブ有無をアラームごとに持つ。
+Androidはfull-screen intentから全画面疑似着信へ直接入り、iOSはAlarmKitの停止／アプリを開く
+から全画面疑似着信へ入る。着信操作は応答、固定の「メッセージを再生」、拒否、あとで、とする。
+チャット／通話からの依頼は確認候補だけを作り、疑似LINEでユーザーが確認した後だけ登録する。
+この時点では実装、staging反映、実機確認は未実施。
+／v5.71: 記憶パイプラインをstagingへ反映し、機械的な実行経路を確認した。
+`20260721090000_add_kanon_character.sql`、`20260727180000_add_memory_pipeline.sql`、
+`20260727190000_preserve_existing_memory.sql`、`20260727200000_bound_memory_retry_window.sql`
+をstagingへ適用し、`memory-worker` v1、`chat-reply` v5、`voice-turn` v16をdeployした。
+worker専用secret、worker URL、`MEMORY_LLM_MODEL`もstagingへ設定済みで、secretなしの
+worker呼び出しはHTTP 401となることを確認した。
+
+過去7日分の正式通話要約63件を4回のworker実行で処理し、すべてHTTP 200・タイムアウトなし、
+処理待ち0件となった。日次処理はユーザー×キャラ×日付14件のうち13件を完了し、会話材料が
+ある12件の日次要約と18件の長期記憶候補を生成した。残る1件は7日範囲外だったため
+`retention_expired`・再試行なしで終了し、処理待ち0件となった。
+
+検証中、日次抽出が既存の長期記憶を新規抽出分だけで置き換える危険と、8日前の対象を作りながら
+実行側は7日以内だけを扱う境界ずれを発見した。前者は既存JSONへ新規JSONを追加し同じキーだけ
+更新するDB trigger、後者は対象作成・claimを厳密な7日へそろえ期限切れrunを閉じるforward
+migrationで修正した。rollback付きstaging検査で、既存記憶保持、当日再試行、翌日繰り越しを
+PASSした。
+
+stagingの会話はYouTube音声の誤認識や名前確認の反復を含む検証データのため、生成された日次要約・
+長期記憶候補は品質合格判定に使わない。雑音を恒久保存しないため、今回生成した18件の
+`memory_facts`と、値が一致する`user_character_memory`のキーはstagingから削除した。
+12件の日次要約は7日で自動削除される短期情報として残した。正常な短い会話による品質確認、
+Android/iOSの長時間通話実機確認、日次モデル比較は未実施で、Draftを維持する。本番は未変更。
+なお、既存記憶保護triggerの適用前にstaging日次処理13件が完了したため、それ以前の
+stagingテスト用`user_character_memory`のうち新規抽出に現れなかったキーは置き換わり、
+復元できない可能性がある。productionデータへの影響はない。
+／v5.70: v5.69で確定した記憶パイプラインを実装した。migration、`memory-worker`、
+通話終了後の正式要約要求、チャット/通話への4層文脈接続、長時間通話内だけの一時要約、
+03:40開始と04:00/05:00再試行、7日削除を追加した。ローカルではTypeScript、Web build、
+Edge Function bundle、Node全44ファイルをPASSした。DB migration適用、Edge Function deploy、
+secret/Vault設定、staging動作確認、実機確認は未実施のため、機能全体は進行中とする。
+1日分が80,000文字を超える場合だけ分割し、部分要約を一つへ再統合する。日次モデル比較は
+残っている。
+／v5.69: 記憶パイプラインの構成をspec v5.3へ確定した。長期記憶だけでは日常会話の流れを
+維持できないため、画面履歴、夜間処理後の未整理文脈、直近7日の日次要約、長期記憶の4層とする。
+
+正式な通話要約は夜間ではなく通話終了後に非同期生成し、次のチャット・通話と夜間処理へ渡す。
+長い通話では古い部分だけを一時要約するが通話終了時に捨て、正式な通話要約は保存済み全文から
+作り直す。夜間処理ではユーザー×キャラ×日付ごとに、最大1,000文字の日次要約と長期記憶更新
+候補を作る。日次要約は直近7日分をAIへ渡す。
+
+最後の夜間処理後のチャットは最大20,000文字、未整理通話要約は1本最大1,000文字・合計最大
+5,000文字を渡す。正式な通話要約、日次要約、処理失敗中の通話本文は最大7日保持する。夜間処理
+は03:30の既存回収後に実行し、一時失敗だけ04:00と05:00に失敗分を再試行する。それでも失敗
+した処理単位は元の日付のまま翌日へ繰り越す。
+
+長期記憶の採用ルール、現在日時、通話の終了日帰属、夜間モデルの設定化、通話の記憶5列読込も
+維持する。／v5.68: 記憶パイプライン(D)の設計を詰め、spec v5.2へ反映した。実装は未着手である。
+／v5.67: Android近接センサーの復旧を完了した。commit `4cada75`。通話中に端末を顔へ
 近づけても画面が消えなくなっていた回帰(2026-07-24 commit `294167e` の旧Plugin一括削除で
 移し忘れ)を、新しい`voicecall`実装へ戻した。`VoiceAudioRouteController` と同じく、
 判断を持つ`VoiceCallScreenController`と、Android APIを扱うPlugin側の
@@ -554,7 +743,7 @@ PR #28/#29後の整理:
 
 ## フェーズ3. 本格実装（依存順）
 
-- [ ] 記憶パイプライン（D）: チャット/通話ログ保存 → 日次処理（夜間バッチ）→ 長期記憶抽出 → AIに渡す組み立て（同日短期文脈は既存から組み立て）
+- [~] 記憶パイプライン（D）: チャット/通話ログ保存 → 日次処理（夜間バッチ）→ 長期記憶抽出 → AIに渡す組み立て（同日短期文脈は既存から組み立て）
 - [ ] 課金（B）: RevenueCat app user id は `public.users.id` を使う。RevenueCat購入確認 → Supabaseでコイン付与 → 消費（idempotency_key で二重消費防止）→ 残高不足時の挙動
 - [~] 疑似電話（A5）
   - 完了: PR #46（mainマージ済み、merge commit: `9006dbfd31d53111897b872eaedefbf8b7eee087`）で、疑似LINEの通話ボタンからユーザー発信の疑似電話を開始し、Androidネイティブ `AudioRecord`（24kHz / mono / PCM16）→ STT → LLM → Aivis TTS → 音声再生を複数ターン継続できる通話画面を実装。
@@ -737,13 +926,26 @@ XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic sta
 
 **キャラ選択時のモデル事前取得（A8-3完成仕様・追加キャラ導線と同時に実装）:**
 
-- [ ] 初回キャラ選択で選択を確定した時点に、共通bundleと選択キャラbundleの取得を開始し、通話開始前に取得・検証・導入を完了できるようにする。
-- [ ] 追加キャラ選択の本実装で、選択を確定した時点に未取得のキャラbundleを取得する。staging検証用の暫定追加UIを完成版の追加キャラ導線とは扱わない。
-- [ ] Web側に両OS共通のモデル準備入口と進捗・失敗・再試行表示を設け、Android・iOSのnative実装を同じ契約へ接続する。片OSだけ先行して製品挙動を変えない。
-- [ ] 導入済みの共通bundle・キャラbundleは再利用し、通常のアプリ再起動・端末再起動・同じキャラの再選択では再ダウンロードしない。
+- [~] 初回キャラ選択で選択を確定した時点に、共通bundle・選択キャラbundle・固定モーニング音声3本を取得し、すべて成功した後だけ選択を保存する両OS経路を実装した。native compile・実機確認待ち。
+- [~] stagingの追加キャラUIも選択確定前に同じ取得経路へ接続した。完成版の追加キャラ購入・選択導線は未実装であり、暫定UIを完成版とは扱わない。
+- [~] Web側に両OS共通のモデル／固定音声準備入口、取得中表示、失敗時の未保存・再試行を追加した。詳細なダウンロード進捗率の表示は未実装。
+- [~] native downloaderは導入済みの共通bundle・キャラbundle・固定音声を再利用する。両OSのnative compile・再選択実機確認待ち。
 - [ ] 両OSの通話開始時に行っている未取得モデルの初回ダウンロードを廃止する。通話中は導入済みモデルの読み込み・warm-upだけを行う。
 
+**記憶パイプライン（D・spec E章）の実装方針:**
+
+- [x] 日次処理は既存の毎晩の自動実行（`pg_cron`）へ相乗りさせる。03:40に対象を作り、03:45にworkerを起動するmigrationをstagingへ適用し、cron 7件とworker HTTP 200を確認した。
+- [x] 正式な通話要約は通話終了後に非同期生成し、日次要約へ取り込まれるまで次のチャット・通話へ渡す。長い通話の古い部分は通話中だけの一時要約へまとめ、正式要約は保存済み全文から作り直す。
+- [x] 日次処理はユーザー×キャラ×日付単位で、その日のチャット、正式な通話要約、イベント、通知結果から日次要約と長期記憶候補を同時生成する。会話が無い組み合わせは呼ばず、80,000文字超過時だけ分割して最後に日次要約を一つへ統合する。
+- [x] 日次要約は1日最大1,000文字、直近7日分を会話AIへ渡し、7日で削除する。最後の成功した夜間処理後のチャットは最大20,000文字、未整理通話要約は1本最大1,000文字・合計最大5,000文字とする。
+- [x] 一時的な夜間処理失敗は04:00と05:00に失敗分だけ再試行し、その後は元の日付で翌日へ繰り越す。正式な通話要約と未処理通話本文は最大7日保持する。rollback付きstaging検査で当日再試行・翌日繰り越し・7日超過の終了をPASSした。2026-07-28に03:40／03:45、04:00／04:05、05:00／05:05、05:30の全cronが実時刻に成功し、7月27日分4 runの初回完了と待機0件を確認した。
+- [x] 正常な食べ物の会話が日次要約と長期記憶へ保存され、翌日の実機会話で保持されていることを確認した。記憶機能はPASS。過去会話を箇条書きのように並べる不自然さは、機能成立後のプロンプト品質調整へ分離する。
+- [x] 長時間通話は、実装済み`voice-turn`のstaging deploy後に確定15ターンの通話がcompletedまで継続し、10往復の一時要約開始条件を実機経路で通過した。古い履歴だけの要約、直近4往復維持、`history_summary`の受信・次ターン再送・終話時破棄はAndroid/iOS共通契約として自動検証済み。
+- [~] 日次処理モデルは`MEMORY_LLM_MODEL`で変更可能にした。複数モデルの比較と採用モデル確定は未実施。
+- [x] `voice-turn` と `chat-reply` は `user_character_memory` の5列（`profile_json` / `relationship_json` / `preference_json` / `memory_json` / `safety_json`）を読む。
+
 - [ ] 通知（A10）: デイリー生成通知（通知文＋入口メッセージの事前生成）、`notification_candidates` / `notification_logs` への保存、同じ文脈IDでの通知文・入口メッセージ連携、関係値重み配分＋lover毎日確定、キャラ個別ON/OFF、`device_installations` を使った有効端末送信、重複防止
+- [~] モーニング（A9）: spec v5.15で複数アラーム、曜日／一回のみ、キャラ、スヌーズ、バイブ、両OSの疑似着信操作、会話からの確認登録、応答時のAI生成第一声と着信中の文章先行生成、固定メッセージの通常通話画面／通常履歴と1.0秒待機を確定。Androidは全画面許可必須化、通知の応答／停止、`応答`／`メッセージを再生`の実機確認まで完了。iOSは検証済みAlarmKit標準音経路へAndroid共通Webフローを接続し、warm起動context、対象alarmだけの停止／スヌーズ、AI通話前の停止完了待ち、固定メッセージの近接監視・受話口／スピーカー切替まで自動検証済み。commit `0711b78`のCodemagic iOS Staging Build `6a686234b6f0c284b5aa280e`でnative compile、AppTests、署名済みIPA生成がPASSし、TestFlight実機でも一連の動作に問題がないことを確認した。キャラ選択時のTTS＋固定音声同時準備、桜音・花音の固定音声各3本のstaging R2配置とDB登録、AI第一声のstaging `voice-turn`反映も完了。R2配置済みTTSは桜音・花音だけで、未配信キャラは選択不可。残りは通話画面のデザイン・ボタン配置と、現在の仮固定WAVを試聴したうえで現在より長く朝の呼びかけとして内容のある正式文言へ差し替える素材工程。
 - [ ] イベント・告白（A11）: 発生条件（サーバルール）、通常通知→疑似LINE入口メッセージ→電話していい？→OK→アプリ内疑似着信→応答→疑似電話の導線、告白・関係状態変更・呼び方変更の明示同意フロー、pending状態、未応答時の戻し/保留、lover化と文脈変化、iOS/Android共通の告白導線
 - [ ] 猫（A3-6）: ランダム猫（ルール）／AI猫（分類）、懐き度
 
@@ -767,7 +969,7 @@ XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic sta
 ## 補足: 未決（Z）と本書の対応
 - Z-1〜Z-3（数値）→ フェーズ2
 - Z-4（記憶の日数・遅延）→ フェーズ0/3で実測しながら
-- Z-6（声・素材）→ フェーズ0。声モデルの商用ライセンス確認とv1仮採用は完了。TTS方式はオンデバイスTTS(Style-Bert-VITS2系AIVMX動的INT8)採用を決定済み(2026-07-18)で、v1の6キャラ全員が対象。桜音を検証基準モデルとした実測でTTS品質(INT8劣化なし)・速度基準(1文目 約0.9〜1.0秒)も確認済み。残りはキャラ画像・猫の鳴き声・固定音声素材の作成、低速端末対策の方針決定(F6)。詳細はspec A8-3 / H1。
+- Z-6（声・素材）→ フェーズ0。声モデルの商用ライセンス確認とv1仮採用は完了。TTS方式はオンデバイスTTS(Style-Bert-VITS2系AIVMX動的INT8)採用を決定済み(2026-07-18)で、v1の6キャラ全員が対象。桜音を検証基準モデルとした実測でTTS品質(INT8劣化なし)・速度基準(1文目 約0.9〜1.0秒)も確認済み。モーニング固定音声は6キャラ×仮文言3本の生成・機械検査まで完了し、試聴・文言確定・配信を残す。ほかにキャラ画像・猫の鳴き声、低速端末対策の方針決定(F6)が残る。詳細はspec A8-3 / H1。
 - Z-7（画面設計）→ フェーズ1/3で各画面を作りながら確定
 - Z-8（RLS・API）→ フェーズ1。RLS・制約・インデックスのDB土台と指定migration 5件の本番反映は完了済み。v4.3匿名Auth方針でのRLS実動作と `current_app_user_id()` による `public.users.id` 解決は staging で検証済み・PASS（2026-07-11、漏れなし）。今後追加するmigration、Edge Function、secret、RLS/APIは開発中stagingで検証し、本番反映・本番RLS確認・本番`current_app_user_id()`確認はフェーズ4でまとめて行う。API設計、Edge Function整理、アプリ側読み書き実装は各機能工程で進める。匿名サインインと引き継ぎコードを前提にする。`transfer_codes` はテーブル追加のみで、発行/引き換え用 Edge Function / RPC とUIは未実装。
 - Z-9（実機検証）→ フェーズ0・フェーズ4。Androidモーニング導線のフェーズ0検証は合格、残りは本番AI接続・フォールバック・リリース前総合確認。
