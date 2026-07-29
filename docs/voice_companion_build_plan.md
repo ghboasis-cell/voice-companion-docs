@@ -1,8 +1,176 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.100 ／ 最終更新日: 2026-07-28**
+**版数: v5.125 ／ 最終更新日: 2026-07-29**
 
-（v5.100: 記憶パイプライン実装後のstaging `voice-turn` v16 ACTIVE後に、確定15ターンの
+（v5.125: Android Staging AAB 1083を実機へ導入して再確認したが、トークを開いた際の
+初期表示位置は期待どおりにならず、修正成立とは扱わない。日時・日付区切り・新着表示と、
+v5.120までに両OS実機確認済みの通知機能は維持する。初期表示位置は今回のmainマージを止めず、
+画面制作工程で改めて扱う。iOSでの初期表示位置確認は実施しない。DB、migration、Edge Function、
+自動cron、productionは変更していない。
+／v5.124: 最新位置修正commit `2779851b65a29189a55894374ca0cb65c8be91c2`を
+Android Staging AAB run `30440083582`でbuildした。runは11分1秒でSUCCESS、versionCode `1083`、
+versionName `staging.1.0.83`、artifact `android-staging-aab-1083`、size `80,760,370 bytes`、
+artifact digest `sha256:6ea9b3e87134fdd67b809d36057334d33ead6ca2c2b0aac51e9574662a79aa7b`。
+Android実機への導入、iOS Codemagic staging build、両OSでの最新位置再確認は未実施。
+DB、migration、Edge Function、自動cron、productionは変更していない。
+／v5.123: 新着・日時表示の実機確認で、日付・時刻は表示されたが、新着がないトークを開いた際に
+最新位置まで移動しない場合があった。履歴DOMの更新直後に1回だけ`scrollHeight`を参照しており、
+Android／iOS WebViewのレイアウト確定前の高さを使えることが原因だった。初期位置の適用を
+2 animation frame後まで待ち、80ms後にも同じ位置を再確認する。新着なしは
+`scrollHeight - clientHeight`、新着ありは最古新着の実際の画面内座標から位置を決め、
+古い画面の遅延処理はgenerationで無効化する。DB、migration、Edge Functionは変更しない。
+`npm test`全50テストファイル、`npx tsc --noEmit`、`npm run build`、`git diff --check`がPASS。
+修正版native buildと実機再確認は未実施。
+／v5.122: 新着・日時表示commit `5b0cb9e9f9024088858deb0048637c3e562e3ead`を
+Android Staging AAB run `30438057591`でbuildした。runは8分53秒でSUCCESS、versionCode `1082`、
+versionName `staging.1.0.82`、artifact `android-staging-aab-1082`、size `80,760,317 bytes`、
+artifact digest `sha256:b0f7c204e7cfe9ed12d12d1bfd60b3fcaed84ec24f7f6093cb24f2d7f5d327e8`。
+Android実機への導入、iOS Codemagic staging build、両OS実機確認は未実施。
+DB、migration、Edge Function、自動cron、productionは変更していない。
+／v5.121: 疑似LINEの見やすさ改善として、既存`chat_messages.created_at`を使い、送受信本文、
+通知入口、通話見出しへ現地時刻を表示し、日付の変わり目へ「今日」「昨日」「月日（曜日）」の
+区切りを表示する。端末内へインストール識別子単位のアプリ初回起動時刻と
+ユーザー・キャラ別の最終トークオープン時刻を保存し、前回オープン後の履歴だけを「新着」とする。
+未訪問キャラは端末のアプリ初回起動時刻を基準にし、新着があれば最古の新着、新着がなければ
+最新位置を最初に表示する。読了位置、DB列、migration、Edge Functionは追加しない。
+新しい判定・日付整形・最古新着移動のテストを追加し、`npm test`全50テストファイル、
+`npx tsc --noEmit`、`npm run build`、Android／iOSの`cap sync`、`git diff --check`がPASSした。
+native実機確認は未実施。
+／v5.120: Android AAB 1081と修正版iOSを実機へ導入し、前面Pushのキャラ別表示を両OSで再確認した。
+花音トークを表示中の花音PushはOS通知も画面内通知UIも出さず、花音の入口本文だけを1件反映してPASSした。
+桜音トークを表示中の花音Pushは桜音画面内へ内容を一切表示せず、Android・iOSともOS通知を表示してPASSした。
+OS通知タップ後は花音トークへ移動し、本来の入口本文を1件だけ反映した。最終配送行はAndroid
+`a07cc264-b645-4a2b-91f1-b253ca98ffd7`、iOS
+`e86b9bd9-b9ef-4908-83fe-8befc1243ca3`で、両方とも`sent`、`attempt_count=1`、
+`last_error=null`、`outcome=opened_chat`、`entry_message_count=1`を確認した。
+自動cronは無効のまま、production変更なし。
+／v5.119: 前面PushをOS通知へ直すcommit `7422bc1`をpushし、Android Staging AAB run
+`30434369962`で署名付きAABをbuildした。runは12分7秒でSUCCESS、versionCode `1081`、
+artifact `android-staging-aab-1081`、size `80,759,119 bytes`、artifact digest
+`sha256:18c1503f1d5923f841f1489148c59f5758bd15e9e2a3f3c292672542e0c8ac66`。
+Android実機への導入、iOS Codemagic build、両OS実機再確認は未実施。
+／v5.118: 両OS実機で同じ花音トークを前面表示中は通知UIなしで入口本文だけが反映されることをPASSした。
+一方、桜音トークを前面表示中の花音PushがOS通知ではなく桜音画面上のアプリ内通知UIとして表示され、
+製品要件と異なることを確認した。この結果はPASSにしない。別キャラまたはトーク外の前面Pushは、
+既存画面へ内容を一切重ねず`LocalNotifications`からOS通知を即時表示し、その通知タップを既存の
+候補ID検証・対象トーク遷移へ接続するよう修正した。iOSは前面でbanner/list/soundを許可する。
+同一キャラ時の通知抑制と冪等な入口反映は維持する。DB、migration、Edge Function、自動cron、
+productionは変更しない。自動検証、native build、両OS実機再確認は未実施。
+／v5.117: Android AAB 1080と修正版iOSを実機へ導入し、通知用・着信用それぞれの
+サイレント開始・終了が保存されることを両OSで確認した。「トーク内容を表示しない」をONにして、
+Android候補 `211ddcc7-881c-4624-bf3f-1e6655cbf3e6`、iOS候補
+`b9d33ba4-0c20-4c6b-b15b-80bcd87bfdaf`だけを手動配送した。両OSのロック画面で
+本文が「花音からメッセージが届いています」へ置換され、通知タップ後のトーク画面には各候補の
+本来の`entry_message_body`が1件だけ表示されることをPASSした。配送行はAndroid
+`2a4381cd-1619-430c-9183-a0c24164f33b`、iOS
+`3e66f700-e987-4db3-8f3e-132137400845`で、両方とも`sent`、`attempt_count=1`、
+`last_error=null`、`outcome=opened_chat`、`entry_message_count=1`を確認した。
+自動cronは無効のまま、production変更なし。
+／v5.116: Push登録の古い失敗状態を再表示しない修正commit `7281646`をpushし、
+Android Staging AAB run `30425836983`で署名付きAABをbuildした。runは11分1秒でSUCCESS、
+versionCode `1080`、artifact `android-staging-aab-1080`、size `80,757,618 bytes`、
+artifact digest `sha256:586fd51461244a6ae605c6b9f23a23df24f4da0b2f4cb8768e8f895c7f053b09`。
+Android実機への導入、iOS Codemagic build、両OSでの再確認は未実施。
+／v5.115: AAB 1079とiOS更新後の設定保存で「端末のPush通知登録に失敗しました」と表示された。
+設定DB更新はエラー表示より前に成功していたが、起動時など過去の`registrationError`状態を保存操作時に
+リセットせず再利用していたため、今回の登録結果ではない古い失敗を表示できる不具合だった。
+保存操作の開始時に古い失敗状態を破棄し、保存直前のON/OFFをPush同期へ明示して、OFFからONへ変えた場合も
+古い画面状態で無効登録しないようにした。実際に端末登録更新だけが失敗した場合は設定を再読込した後、
+「通知設定は保存済み、端末登録更新だけ未完了」と区別して案内する。SQL変更なし。native buildと実機再確認は未実施。
+／v5.114: commit `6d19d10`をbranch `agent/daily-notification-foundation`へpushし、
+Android Staging AAB run `30424097434`で署名付きAABをbuildした。runは11分5秒でSUCCESS、
+versionCode `1079`、artifact `android-staging-aab-1079`、size `80,757,483 bytes`、
+artifact digest `sha256:fbcd69dd47fb0352d31021482cd15ed29296907944f0fbbc28286551f268fa33`。
+Android実機への導入、iOS Codemagic build、両OSでの分離設定確認は未実施。
+／v5.113: migration `20260729092000_split_notification_and_incoming_call_quiet_hours.sql`を
+ユーザーがstaging SQL Editorで実行し、Successを確認した。通常通知用の既存時間を着信側へ初期コピーし、
+以後は通知用と着信用のサイレント開始・終了を独立して保存できるDB状態まで反映済み。
+native buildと実機確認は未実施。
+／v5.112: 通常メッセージ通知とキャラ側からの自発的な疑似着信について、サイレント開始・終了を
+別々に設定・解除・保存できるUIと保存処理を実装した。既存の`quiet_hours_start/end`は通常通知用として
+維持し、`incoming_call_quiet_hours_start/end`を追加するforward migrationを用意した。migration適用時は
+従来のサイレント時間を着信側へ初期コピーし、適用直後に着信可能時間が意図せず広がることを防ぐ。
+モーニングは両方のサイレント時間から独立する。migrationのstaging適用、native build、実機確認は未実施。
+／v5.111: commit `76486d8`をbranch `agent/daily-notification-foundation`へpushし、
+Android Staging AAB run `30422118009`で署名付きAABをbuildした。runは10分28秒でSUCCESS、
+versionCode `1078`、artifact `android-staging-aab-1078`、size `80,757,465 bytes`、
+artifact digest `sha256:b4c2ff4174915f53809a8beea3229efa8d0d2c55fe61cd01acccdc317cd76be0`。
+Android実機への導入と通知3項目の確認、iOS Codemagic build・TestFlight確認は未実施。
+／v5.110: v5.109の2 migrationをユーザーがstaging SQL Editorで実行し、Successを確認した。
+`notification-dispatch-worker`をstaging project `nqqkbwhrwinxuameyzya`へdeployした。
+これにより内容非表示設定の配信直前適用と、同一キャラ判定用`character_id`を含むPush payloadの
+サーバ反映まで完了した。Webアプリ変更のnative buildと実機確認は未実施。
+／v5.109: 通知の次工程として、Push payloadへ`character_id`を追加し、アプリ前面で同じキャラの
+トークを表示中は通知UIを出さず、送信ログとの到着競合だけを限定再試行して既存RPCから入口メッセージを
+冪等反映するWeb経路を実装した。別キャラまたはトーク外では既存のアプリ内通知UIを維持する。
+`settings.notification_content_hidden`と`settings.incoming_call_enabled`のmigration、設定UI、保存処理を追加し、
+内容非表示時は配信直前に「{キャラ名}からメッセージが届いています」へ置換する。自発着信設定は通常通知と
+独立し、登録済みモーニングには連動しない。migrationのstaging適用、Function deploy、native build、
+実機確認は未実施。自発着信の本番スケジューラはイベント・告白工程とともに未実装。
+／v5.108: versionCode明示修正commit `ac61e06`をAndroid Staging AAB run
+`30366807251`（run number 75）でbuildし、Gradleの`Verified versionCode=1075
+versionName=staging.1.0.75`、署名済み`VoiceCompanion-staging-1075.aab`、
+番号付きartifact `android-staging-aab-1075`の生成を確認した。AAB 1075をAndroid実機へ導入し、
+通知設定保存後に`device_installations`へAndroid・granted・active・FCM tokenありで登録された。
+Android端末だけを指定した手動候補はFCM受理1・失敗0となり、端末ロック中の通知受信、
+タップによる対象チャット表示、入口メッセージ1件の追加までPASSした。これでiOS／Androidの
+バックグラウンド実通知経路はPASS。Androidでアプリ前面中の初回送信は通知欄に表示されず、
+`pushNotificationReceived`未処理を残課題として確認した。自動cronはまだ無効。
+／v5.107: Android Staging AAB run `30363266417`のartifactをPlay Consoleへ投入すると、
+既に使用済みのversionCode `1066`として拒否された。run numberから`1074`になる想定だけを記録し、
+完成AABの番号を保証できていなかったため、v5.106の「AAB 1074成立」は撤回する。
+再発防止としてversionCode／versionNameをGradle project propertyで明示し、設定値を専用taskで検査して
+不一致時はbuildを失敗させる。ZIP artifact名と内部AAB名の両方へversionCodeを付け、
+同名`app-release.aab`による取り違えを防ぐ。修正版AAB buildとPlay Console投入は未実施。
+／v5.106: iOS実通知確認済みcommit `5f2283b`をAndroid Staging AAB workflow run
+`30363266417`（run number 74）でbuildし、Firebase設定を含む署名済みAAB
+の生成とworkflow成功までは確認した。ただし完成AABのversionCodeを検査しておらず、Play Consoleで
+`1066`として拒否されたため、`1074`のAABが成立したとは扱わない。
+自動cronは無効のまま、mainとproductionは未変更。
+／v5.105: Codemagic iOS Staging Build index 57をTestFlight実機へ導入し、設定画面でユーザー操作時だけ
+通知許可を要求すること、`device_installations`へiOS・granted・active・APNs tokenありで登録されることを
+確認した。自動cronは無効のまま手動候補1件を既存queueへ入れ、APNs受理1・失敗0を確認した。
+ロック画面通知をタップすると花音の疑似LINEが開き、`notification_logs`は`opened_chat`、
+入口メッセージは`source_notification_log_id`に対して1件だけ作られた。iOS実通知はPASS。
+残りはAndroidのFirebase入りstaging build・FCM token・実通知、F3正式重み、両OS確認後のcron有効化。
+／v5.104: commit `9fb44e8`のCodemagic iOS Staging Build
+`6a68a7575c8ba71432377b1f`（index 57）はSUCCESSし、新しいPush対応provisioning profileの適用、
+AppTests、署名済み`App.ipa`（43.30 MB）の生成、App Store Connectへのpublishingまで完走した。
+iOS native buildは成立し、残りはTestFlight実機での通知許可・APNs token登録・実通知確認。
+／v5.103: A10の両OS配信資格情報をstagingへ設定した。Androidは専用Firebase project
+`voice-companion-staging`へ`com.ghboasis.voicecompanion`を登録し、`google-services.json`を
+アプリへ配置、FCM HTTP v1用service account 3項目をSupabase secretへ保存した。iOSは同Bundle IDの
+Push Notifications capabilityを有効化し、既存App Store provisioning profileを再生成した。
+Codemagicへ新profileを`voicecompanion-appstore-push`として追加し、staging／production workflowの
+参照を切り替えた。VoiceCompanionのProduction topicだけに限定したAPNs key 5項目をstaging secretへ
+保存し、Xcode targetへDebug=development／Release=productionの`aps-environment` entitlementを追加した。
+秘密鍵はrepositoryへ保存せず、登録後に一時ファイルとDownloads原本を削除した。49テスト、
+TypeScript検査、Web build、iOS／Android Capacitor sync、`git diff --check`はPASS。残りはstaging build、
+実機token登録と実通知、確認後の自動cron有効化。
+／v5.102: A10第二段階として、lover全員の毎日確定、lover不在時の関係値重み付き日替わり1枠、
+現地09時台だけの割当、候補への`scheduled_for`設定を実装した。F3確定前の重み式は独立moduleへ隔離した。
+設定画面へ通知全体ON/OFF、キャラ個別ON/OFF、quiet hoursを追加し、ユーザー操作時だけOS許可を要求する。
+許可済み端末は永続installation IDとAPNs/FCM tokenを`device_installations`へ同期する。iOS AppDelegateへ
+Capacitorのremote notification token転送を追加した。通知タップは、送信済み`notification_logs`を検証する
+`open_notification_in_chat` RPCが入口メッセージを一度だけ作り、対象キャラの疑似LINEを開く。
+端末別の耐久`notification_delivery_attempts` queue、quiet hours再判定、並列claim、指数backoff、
+stale lock回復、無効token停止、APNs token認証、FCM HTTP v1認証・送信を実装し、provider受理後だけ
+`notification_logs`を作る。migration 2件をstagingへ適用し、`daily-notification-worker` v5と
+`notification-dispatch-worker` v2のACTIVE、手動実行で割当0・queue0・送信0の安全な空処理を確認した。
+この時点ではstagingにAPNs/FCM secret、iOS Push capability、Android `google-services.json`がまだ無く、
+自動cronも未有効化のため実通知は送られない。全自動テスト、TypeScript検査、Web build、
+両Function bundleはPASS。
+／v5.101: A10第一段階として、デイリー通知文と疑似LINE入口メッセージを同時生成して
+`notification_candidates`へ保存する内部Edge Functionを追加した。共通`context_id`、
+ユーザー×キャラ×現地日付の冪等キー、通知全体／キャラ個別ON判定、直近7日日次要約・長期記憶・
+関係状態の再利用、最近使った話題の参照、ロック画面文面の安全検査と固定文フォールバックを実装した。
+候補と配送結果のクライアント書込み権限を除去し、`notification_logs`は実配信受理後だけ作る境界を
+固定した。キャラ枠の関係値重み、lover毎日確定、quiet hours、端末トークン、実配信、通知タップ後の
+疑似LINE反映は次段階。migrationをstagingへ適用し、`daily-notification-worker` v3 ACTIVEを確認した。
+実在する日次要約の対象で候補1件を生成し、通知文・入口メッセージ・共通`context_id`・冪等キーの保存を
+確認した。同じ対象の再実行は同じ候補を返し、候補数1、未配信の`notification_logs` 0件を確認した。
+全539テスト、TypeScript検査、Web build、Edge Function bundle、`git diff --check`はPASS。
+／v5.100: 記憶パイプライン実装後のstaging `voice-turn` v16 ACTIVE後に、確定15ターンの
 通話がcompletedまで継続し、10往復または12,000文字で開始する通話内一時要約のターン条件を
 実機経路で通過したことをDB行数から確認した。サーバは古い履歴だけを要約して直近4往復を残し、
 Android/iOS両方が同じ`history_summary`を受信・次ターンへ再送・終話時破棄する契約を自動検証済み。
@@ -944,7 +1112,7 @@ XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic sta
 - [~] 日次処理モデルは`MEMORY_LLM_MODEL`で変更可能にした。複数モデルの比較と採用モデル確定は未実施。
 - [x] `voice-turn` と `chat-reply` は `user_character_memory` の5列（`profile_json` / `relationship_json` / `preference_json` / `memory_json` / `safety_json`）を読む。
 
-- [ ] 通知（A10）: デイリー生成通知（通知文＋入口メッセージの事前生成）、`notification_candidates` / `notification_logs` への保存、同じ文脈IDでの通知文・入口メッセージ連携、関係値重み配分＋lover毎日確定、キャラ個別ON/OFF、`device_installations` を使った有効端末送信、重複防止
+- [~] 通知（A10）: デイリー通知文＋疑似LINE入口の同時生成、共通`context_id`、日付冪等、lover毎日確定／lover不在時の関係値重み1枠、通知全体・キャラ個別ON、quiet hours、有効端末・token同期、端末別耐久queue、APNs/FCM送信、受理後だけの送信ログ、通知タップ時の一度だけの入口メッセージ挿入まで実装済み。staging DBと両Function、FCM/APNs secret、Firebase Android設定、Apple Push capability、Push対応App Store profile、iOS entitlementまで反映した。Codemagic Build index 57のnative buildとTestFlight実機で、iOS token登録、APNs実通知、タップから花音チャット表示、入口メッセージ1件の冪等挿入までPASS。AndroidはversionCode明示・検査・番号付き成果物へ修正したAAB 1075を実機へ導入し、FCM token登録、ロック中の実通知、タップから対象チャット表示、入口メッセージ1件までPASS。両OSのバックグラウンド実通知経路は成立した。アプリ前面では両OS共通の`pushNotificationReceived`処理、同一キャラのトーク表示中だけの通知UI抑制、入口メッセージの冪等反映、内容非表示設定、自発着信の独立設定まで実装・自動検証済み。2 migrationのstaging適用と`notification-dispatch-worker`のstaging deployも完了した。残りはnative build・実機確認、F3正式重み、自動cron有効化。自発着信の本番スケジューラはイベント・告白工程で実装する。
 - [~] モーニング（A9）: spec v5.15で複数アラーム、曜日／一回のみ、キャラ、スヌーズ、バイブ、両OSの疑似着信操作、会話からの確認登録、応答時のAI生成第一声と着信中の文章先行生成、固定メッセージの通常通話画面／通常履歴と1.0秒待機を確定。Androidは全画面許可必須化、通知の応答／停止、`応答`／`メッセージを再生`の実機確認まで完了。iOSは検証済みAlarmKit標準音経路へAndroid共通Webフローを接続し、warm起動context、対象alarmだけの停止／スヌーズ、AI通話前の停止完了待ち、固定メッセージの近接監視・受話口／スピーカー切替まで自動検証済み。commit `0711b78`のCodemagic iOS Staging Build `6a686234b6f0c284b5aa280e`でnative compile、AppTests、署名済みIPA生成がPASSし、TestFlight実機でも一連の動作に問題がないことを確認した。キャラ選択時のTTS＋固定音声同時準備、桜音・花音の固定音声各3本のstaging R2配置とDB登録、AI第一声のstaging `voice-turn`反映も完了。R2配置済みTTSは桜音・花音だけで、未配信キャラは選択不可。残りは通話画面のデザイン・ボタン配置と、現在の仮固定WAVを試聴したうえで現在より長く朝の呼びかけとして内容のある正式文言へ差し替える素材工程。
 - [ ] イベント・告白（A11）: 発生条件（サーバルール）、通常通知→疑似LINE入口メッセージ→電話していい？→OK→アプリ内疑似着信→応答→疑似電話の導線、告白・関係状態変更・呼び方変更の明示同意フロー、pending状態、未応答時の戻し/保留、lover化と文脈変化、iOS/Android共通の告白導線
 - [ ] 猫（A3-6）: ランダム猫（ルール）／AI猫（分類）、懐き度
