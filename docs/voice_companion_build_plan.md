@@ -1,8 +1,283 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.125 ／ 最終更新日: 2026-07-29**
+**版数: v5.156 ／ 最終更新日: 2026-07-31**
 
-（v5.125: Android Staging AAB 1083を実機へ導入して再確認したが、トークを開いた際の
+（v5.156: AAB 1104をAndroidへ導入した。アプリがバックグラウンドに残るロック中では、全画面着信、
+応答後の通話画面維持、第一声、録音準備音、通常会話まで成立した。履歴からスワイプ終了後のロック中でも
+candidate `7ac08d99-768b-4060-aa7e-36e94ec70dc7`で、一瞬の通知から直ちに全画面へ切り替わり、
+以後の応答・第一声・録音準備音・通常会話はすべて成立した。candidateとdeliveryも同一installationで
+最終`answered`、errorなし。終話後はロック画面へ戻ったが、端末自体のロックを解除せず
+`showWhenLocked`の通話Activityだけを終了する正しいセキュリティ動作である。ユーザーは全画面前の
+一瞬の通知を許容範囲と判断した。AAB 1104はアプリ前面、別アプリ前面、ロック中、スワイプ終了後ロック中の
+実機要件を満たした。記録だけの変更ではpush・再ビルドしない。USB、ローカルGradle、production、DB、
+migration、Function、secret、iOSは変更していない。
+／v5.155: ロック応答後のActivity表示維持修正commit `812c754`をAndroid On-Device TTS Test run
+`30608630277`で検証し、2分50秒でSUCCESSした。Android Staging AAB run `30608785231`も
+10分40秒でSUCCESSし、versionCode `1104`、versionName `staging.1.0.104`、artifact
+`android-staging-aab-1104`（80,770,313 bytes、artifact ID `8784800197`）の生成・アップロードを
+確認した。AAB 1104の端末導入とロック実機再確認は未実施。この記録だけではpush・再ビルドしない。
+production、DB、migration、Function、secret、iOSは変更していない。
+／v5.154: AAB 1103をAndroidへ導入し、ロック中にcandidate
+`3bd9089c-d7da-4776-b832-ebc0eaa9ff96`を1件送信した。full-screen intentの全画面から応答すると
+ロック画面へ戻り、解除後は`キャラが話しています`で固着して第一声は聞こえなかった。サーバー上は
+candidateとdeliveryが`answered`、errorなしであり、v5.152の誤った`backgrounded`終了は解消していた。
+原因は応答時の`stopNativeSpontaneousCallRinging()`が着信音・通知だけでなく
+`setShowWhenLocked(false)`と`KEEP_SCREEN_ON`解除まで行い、通話開始中のActivityをロック画面の裏へ
+隠していたこと。応答時は`keepActivityVisible=true`で着信信号だけを停止し、通話終了時に通常の
+`stopNativeSpontaneousCallRinging()`を必ず呼んでロック上表示を解除するよう、表示所有権を通話終了まで
+延長した。ローカル全594テスト、TypeScript、Web build、diff検査はPASS。修正版GitHub native test、
+新AAB、ロック実機再確認は未実施。USB、ローカルGradle、production、DB、migration、Function、
+secret、iOSは変更していない。
+／v5.153: ロック画面応答修正commit `dceb6d7`をAndroid On-Device TTS Test run
+`30607125254`で検証し、2分47秒でSUCCESSした。Android Staging AAB run `30607267404`も
+11分30秒でSUCCESSし、versionCode `1103`、versionName `staging.1.0.103`、artifact
+`android-staging-aab-1103`（80,770,332 bytes、artifact ID `8784244120`）の生成・アップロードを
+確認した。AAB 1103の端末導入とロック実機再確認は未実施。この記録だけではpush・再ビルドしない。
+production、DB、migration、Function、secret、iOSは変更していない。
+／v5.152: AAB 1102をAndroidへ導入した。アプリ前面では全画面・着信音・バイブ・有効な応答ボタンが
+PCM準備後に同時開始し、応答、第一声、録音準備音、通常会話まで成立した。別アプリ前面ではheads-up通知、
+通知タップ後の全画面、準備後の応答、録音準備音、通常会話まで成立した。ロック中はfull-screen intentで
+全画面表示したが、応答操作時に2回とも不在着信へ終了した。candidate
+`fcbd15d7-0899-454d-88ee-01d6340f8f15`と`b713524f-aaa6-4fb0-a5fe-2761aef78d6c`は、いずれも
+拒否ではなく`outcome_reason=backgrounded`だった。ロック画面の応答時にAndroidが通知する一時的な
+inactiveを、Webの`appStateChange`がユーザーのバックグラウンド移行と誤判定していた。
+`backgrounded`終了は、アプリ前面でPCM準備中のまま実際に非表示となった
+`spontaneousForegroundDisplayPending`時だけに限定し、全画面表示済み着信を終了しないよう修正した。
+ローカル全594テスト、TypeScript、Web build、diff検査はPASS。修正版GitHub native test、新AAB、
+ロック実機再確認は未実施。USB、ローカルGradle、production、DB、migration、Function、secret、iOSは
+変更していない。
+／v5.151: 前景表示待機guard修正commit `ed43d4f`をAndroid On-Device TTS Test run
+`30605206597`で検証し、3分5秒でSUCCESSした。Android Staging AAB run `30605346779`もSUCCESSし、
+versionCode `1102`、versionName `staging.1.0.102`、artifact `android-staging-aab-1102`
+（80,770,267 bytes、artifact ID `8783527647`）の生成・アップロードを確認した。AAB 1102の
+端末導入と実機再確認は未実施。この記録だけではpush・再ビルドしない。production、DB、migration、
+Function、secret、iOSは変更していない。
+／v5.150: AAB 1101をAndroidへ導入し、アプリ前面中にcandidate
+`b8350b7e-803f-48a8-bc8f-154aa0c3c7c4`を1件送信した。Workerは
+`queued=1, sent=1, deferred=0, failed=0`。FCM受信とopen RPCは成立したが、candidateとdeliveryは
+即`preparation_failed`となり全画面は表示されなかった。原因はv5.148で前景PCM準備中に
+`state.view`を`incomingCall`へ切り替えないよう変更した一方、準備関数入口が
+`state.view === "incomingCall"`だけを有効条件としていたため、native TTS呼出し前にfalseを返した
+こと。既存着信画面または前景表示待機中のどちらも準備を有効とし、バックグラウンド・拒否・世代更新時は
+従来どおり無効化する。AAB 1101は前景FAILで追加送信しない。production、DB、migration、Function、
+secret、iOSは変更しない。
+／v5.149: 前景着信表示・第一声後準備音修正commit `3f184c1`をAndroid On-Device TTS Test
+run `30604011585`で検証し、追加JUnitを含め3分2秒でSUCCESSした。Android Staging AAB run
+`30604152607`も10分59秒でSUCCESSし、versionCode `1101`、versionName
+`staging.1.0.101`、artifact `android-staging-aab-1101`（80,770,211 bytes、
+artifact ID `8783143662`）の生成・アップロードを確認した。AAB 1101の端末導入と実機再確認は未実施。
+この記録だけではpush・再ビルドしない。production、DB、migration、Function、secret、iOSは変更していない。
+／v5.148: AAB 1100をAndroidへ導入し、アプリ前面中にcandidate
+`b87905ea-4b33-497a-814f-bf79cf15b993`を1件送信した。Workerは
+`queued=1, sent=1, deferred=0, failed=0`。candidateとdeliveryは同じinstallationで
+最終`answered`、errorなし。全画面着信、
+応答、第一声、`話してください`への遷移、通常会話は成立し、AAB 1099の固着・再接続は解消した。
+一方、第一声PCM準備完了まで無音・無振動の全画面が表示され、第一声後の録音準備音も鳴らなかった。
+前景受信はPCM準備完了まで現在画面を維持し、完了時に全画面・着信音・バイブ・有効な応答ボタンを
+同時開始するよう修正する。録音準備音欠落は、録音開始前の第一声を`recordingGeneration=-1`として
+準備音要求から除外し、さらに第一声再生完了時だけ`readyCueCompleted=true`を先行設定して
+turnを切り替えていたことが原因。第一声も通常回答と同じ準備音を要求し、その完了を待ってから
+次turnへ進める。録音世代がない第一声の準備音callbackは録音Controllerへ渡さず、Runtimeの
+次turn進行だけに使う。準備音ON/OFF設定は後工程。AAB 1100は前景総合FAILとし、
+修正版native test・新版AABまで追加送信しない。production、DB、migration、Function、secret、
+iOSは変更しない。
+／v5.147: Android着信第一声修正commit `274b7f4`をAndroid On-Device TTS Test run
+`30602271270`で検証し、2分38秒でSUCCESSした。Android Staging AAB run
+`30602392887`も10分56秒でSUCCESSし、versionCode `1100`、versionName
+`staging.1.0.100`、artifact `android-staging-aab-1100`（80,769,532 bytes、
+artifact ID `8782531967`）の生成・アップロードを確認した。AAB 1100の端末導入と実機再確認は未実施。
+この記録だけではpush・再ビルドしない。production、DB、migration、Function、secretは変更していない。
+／v5.146: AAB 1099をAndroidへ導入し、アプリ前面中にcandidate
+`e513bf04-05eb-44c0-98e5-236d2c72f37d`を1件送信した。Workerは
+`queued=1, sent=1, deferred=0, failed=0`、candidateとdeliveryは同じinstallationで
+`answered`、errorなし。前面から直接全画面表示され、強制終了せず応答・第一声再生まで成立した。
+一方、第一声PCM準備完了まで応答ボタンの待ち時間が長く、第一声は端末を耳へ運ぶ前に始まり、
+再生後は`キャラが話しています`で固着して`再接続中`へ落ちたため通常会話FAILとする。
+コード上の原因は、第一声用の次turn standbyが先にreadyとなり、その後に再生完了した場合、
+`NORMAL_PLAYBACK_COMPLETED`側が`maybeAdvanceTurn()`を呼ばず次turnへ進まない競合である。
+再生完了側でも必ず進行判定するよう修正し、アプリ前面受信だけは第一声PCM準備完了後に着信音を
+開始する。応答後は既存モーニング基準と同じ1.0秒の受話猶予を置いてから通話接続を開始する。
+AAB 1099は通常会話FAILであり、修正版native test・新版AAB前の追加送信は行わない。
+production、DB、migration、Function、secretは変更していない。
+／v5.145: v5.144の強制終了修正commit `9ed9302`をAndroid On-Device TTS Test run
+`30600727202`でnative compile・Gradle検証しSUCCESSした。Android Staging AAB run
+`30600863540`も11分1秒でSUCCESSし、versionCode `1099`、versionName `staging.1.0.99`、
+artifact `android-staging-aab-1099`（80,769,966 bytes、artifact ID `8782009009`、
+digest `sha256:195b08d235176c17eba470894dc171ed0c9d1ac4785c1e4403c193074cee450a`）の
+生成・アップロードを確認した。AAB 1099の端末導入と実機再確認は未実施。
+production、DB、migration、Function、secretは変更していない。
+／v5.144: AAB 1098をAndroidへ導入し、通常通知・全画面通知許可済み、アプリ前面中で
+candidate `11589c0f-ae88-4267-8d70-20a20d08c1f9`を1件送信した。Workerは
+`queued=1, sent=1, deferred=0, failed=0`、deliveryは`sent`・errorなしだったが、端末では
+アプリが落ち「内部エラーのため強制終了しました」と表示された。candidateは`ringing`のまま、
+`opened_at`、`response_expires_at`、`opened_installation_id`がすべてnullなので、open RPC前の
+native移行中のFAILとする。v5.141で追加した`SpontaneousIncomingCallPlugin.stopRinging()`が
+Capacitor plugin threadからActivityのwindow flagsを直接変更し、着信画面へ移った直後に
+ロック画面表示用flagsまで解除するコード上の欠陥を修正した。Serviceの音・通知停止とActivity
+flags解除を分離し、着信表示中はflagsを維持し、終了時のflags解除だけをAndroid UIスレッドで行う。
+AAB 1098は実機FAILであり、修正版native test・新版AAB作成前の再送は行わない。
+USB接続、production、DB、migration、Function、secretの変更は行っていない。
+／v5.143: Android Staging AAB run `30564975505`でv5.142までの修正を署名付きstaging AABへ
+buildした。runは11分6秒でSUCCESSし、versionCode `1098`、versionName `staging.1.0.98`、
+artifact `android-staging-aab-1098`（80,769,191 bytes、artifact ID `8768747167`、
+digest `sha256:f4686a4ab21622abdc3cb622581f5c7a7d3ecf1fca0c08a254a79b3498741bca`）の
+生成・アップロードを確認した。AABの配布、端末導入、Android実機3状態確認、
+Play Consoleのfull-screen intent申告は未実施であり、Android実機PASSにはしない。
+USB接続、ローカルGradle、production、DB、migration、Function、secretの変更は行っていない。
+／v5.142: v5.141のAndroid修正をGitHub Actionsでnative検証した。初回run `30563593643`で
+`MainActivity.onResume/onPause`のアクセス修飾子を検出し、Capacitor `BridgeActivity`に合わせて
+`public`へ修正した。修正版run `30563888532`ではCapacitor Android sync、Android Java compile、
+Gradleの正式voice-call unit testsを含む全工程がPASSした。ローカルGradleとUSB接続は使用していない。
+AAB作成、配布、Android実機確認、Play Consoleのfull-screen intent申告は引き続き未実施であり、
+Android実機PASSにはしない。
+／v5.141: AAB 1097の通知再表示原因を修正した。Android前面ではForeground Service通知を
+作らず直接アプリ内着信へ進み、前面外だけ通話通知を一度開始する。通知content/full-screen intentから
+Serviceを再開始するフラグとMainActivity再開始処理を削除し、重複FCMでも通知段階30秒を延長しない。
+Androidだけは有効期限内の着信画面とnative着信音をopen RPCより先に開始し、Activityへ移った時点で
+Foreground Service通知を終了する。同一candidateのlistener/consume重複処理も抑止した。
+通常通知と全画面通知の許可状態を初期設定・設定画面へ別表示し、Android 14以降は説明後のユーザー操作で
+特別アクセス設定を開き、未許可では着信設定を完了扱いにしない。Google Playのfull-screen intent要件に
+合わせ、着信ONの通話通知だけに使用し、未許可時はheads-upへ縮退する。A8の旧「通知タップ限定」記述も
+A10-1へ統一した。iOSの通知・着信経路は変更せず、Android即時表示がAndroid限定であることを回帰検査した。
+ローカルで全594テスト、TypeScript、Web build、Capacitor Android sync、diff検査はPASS。
+Chromebookへ負荷をかけない運用に従いnative compileはローカル実行せず、GitHub Actionsで行う。
+AAB作成、配布、実機確認、
+Play Consoleのfull-screen intent申告は未実施であり、Android実機PASSにはしない。USB接続は検証手段に
+含めない。production、DB、migration、Function、secretは変更していない。
+／v5.140: Android `staging.1.0.97`（versionCode `1097`）を実機へ導入し、
+candidate `5b0ab079-0273-4b4c-a484-b292f79b6ab3`をAndroidだけへ1件送信した。
+配信はcandidate `ringing`、delivery `sent`、Worker
+`queued=1, sent=1, deferred=0, failed=0`まで成功したが、実機では通知を何度タップしても
+通知が出続け、おそらく約30秒で消え、全画面着信画面へ正常遷移しなかった。
+送信時の前面・ホーム・他アプリ・ロック状態と通常通知・全画面通知許可状態は記録できていないため、
+いずれも確認済みとしない。応答、第一声準備、通常会話には未到達。
+コード上は、通知content/full-screen intentの`startSpontaneousCallRinging=true`を
+`MainActivity`が受けて既に稼働中の`SpontaneousCallService`を再度`ACTION_START`し、
+通知と30秒タイマーを作り直す経路が症状と整合するが、実機ログ未取得なので原因は未確定。
+AAB 1097は実機FAILを維持し、追加送信・修正・調査はユーザー指示により停止して引き継ぐ。
+production、DB schema、migration、Function、secretは変更していない。
+／v5.139: v5.138修正版commit `f96e078dbae1aa4033029504e0f74d4f5ed294c4`を
+Android Staging AAB run `30550118170`でnative compile・署名した。runはSUCCESS、
+versionCode `1097`、versionName `staging.1.0.97`、artifact `android-staging-aab-1097`を生成した。
+全51テスト、TypeScript、Web build、Capacitor Android sync、native compile、署名、artifact uploadは
+PASS。実機への導入、通常通知・全画面通知の初期許可導線、前面直接全画面、未ロックheads-up、
+許可済みロック中の自動全画面、open RPC、第一声準備、応答、通常会話は未確認であり、
+Android実機は未完了のまま維持する。AAB 1096は使用しない。production、DB、Function、secretは変更していない。
+／v5.138: v5.136でAndroidを通知タップ限定へ変更した判断を撤回した。正しい製品要件は、
+アプリ前面ではFCM受信時に直接全画面、前面外ではfull-screen intentを付け、ロック中かつ
+全画面通知許可済みなら自動全画面、未ロックでホーム画面・他アプリ表示中または権限なしの場合だけ
+heads-up通知へ縮退する。通常通知とAndroid 14以降の全画面通知を新規初期設定で案内し、
+既存ユーザーの着信設定有効時の起動と着信設定ON時にも同じ確認を通し、設定画面から戻った時点で
+再確認する。許可未完了では着信設定を
+保存完了扱いにしない。v5.137のAAB 1096は誤った通知タップ限定実装なので実機確認対象にしない。
+RPC詳細診断、第一声準備中の応答無効・スピナー・拒否有効は維持する。production、DB、Function、
+secretは変更しない。修正版の自動検証、native build、実機確認は未実施。
+／v5.137: v5.136実装commit `93ad6937f38337b3edaabcdacd7e5b82a612f7b6`を
+Android Staging AAB run `30547572298`でnative compile・署名した。runは10分56秒でSUCCESS、
+versionCode `1096`、versionName `staging.1.0.96`、artifact `android-staging-aab-1096`
+（80,767,913 bytes、artifact ID `8761712581`）を生成した。実機への導入、通知段階、
+通知タップ後の全画面表示、open RPC、第一声準備、応答後の第一声と通常会話は未確認であり、
+Android実機は未完了・FAILのまま維持する。production、DB、Function、secretは変更していない。
+／v5.136: Android `staging.1.0.95`で発生した気まぐれ着信open失敗を引き継いだ。
+対象candidate `0c844a17-7d65-40b4-9e32-bc232ebcb846`をStagingで読み取り、FCM配信は
+`sent`まで成功した一方、候補は一度も`opened`にならず`notification_timeout`で不在着信へ
+確定した事実を確認した。次回の実機失敗から原因を特定できるよう、open RPCの候補ID、
+installation ID、native context受信経路、Supabaseのcode/message/details/hintをStaging診断へ
+追加した。v5.135のUI要件を実装し、第一声PCM準備中は拒否を有効なまま、応答だけをスピナー付き
+`準備中…`として無効化し、成功時だけ`応答`へ切り替える。準備前の旧auto-answerは廃止した。
+Androidはv5.134の二段階契約へ戻し、FCM受信ではActivityやfull-screen intentを自動起動せず、
+`{キャラ名}から着信`／`タップして確認`の30秒通知に留め、通知タップ後だけMainActivityへ進む。
+ローカルでNode全51 suites、TypeScript、Web build、Capacitor Android sync、diff検査がPASS。
+DB、migration、Function、Staging設定、productionは変更していない。native compileと新版実機確認は未実施。
+／v5.135: 日常の気まぐれ着信の後続UI要件を確定した。通知タップ後は第一声PCMの生成完了を
+待たず、着信音と全画面着信を直ちに開始する。別ローディング画面は設けず、全画面着信内で
+拒否を常時有効、応答だけを無効化し、スピナーと`準備中…`を表示する。準備完了時に`応答`へ
+切り替え、応答後は待たず通常通話画面へ移って合成済み第一声を再生する。生成進捗による画面遅延、
+固定ローディング時間、準備前操作の予約・自動応答は採用しない。本更新は仕様・計画のみであり、
+画面コード、native、DB、Staging、production、ビルドは変更しない。
+／v5.134: v5.133の確定要件を実装した。通知段階30秒と通知オープン後30秒をDBで分離し、
+期限切れ、拒否、バックグラウンド移行、第一声準備失敗を候補ごとの不在着信1件へ集約する。
+配信workerは通知前に日時・関係性・記憶・最近の文脈から第一声テキストを生成し、生成成功時だけ
+有効端末1台へ配信する。通知タップ後は両OSのオンデバイスTTSで第一声をPCMまで合成し、1回再試行する。
+準備前の応答操作は完了まで待ち、成功後は通常通話の既存サーバーturnへ合成済みPCMを渡して再合成しない。
+応答確定前に既存の通話最低残高を再確認し、不足時はcall・録音・課金を作らず不在着信へ確定する。
+Android Foreground Serviceにも30秒の端末側停止を追加し、気まぐれ着信だけはfull-screen intentの自動起動と
+通知上の直接応答／拒否を外して通知タップ後に第二段階へ入るよう統一した。TypeScript、worker bundle、Node全テスト、
+両nativeの正式コンパイル、Staging migration／Function反映、実機確認は検証結果に従って別途記録する。
+暫定Staging worker version 9はまだ単純60秒のままであり、このローカル実装は未反映。
+／v5.133: 実機結果を受けた最終要件を確定した。単純な配信開始から60秒ではなく、
+通知段階30秒と通知オープン後の全画面30秒を分離する。通知は`{キャラ名}から着信`／
+`タップして確認`とし、期限後タップは対象トークの不在着信を開く。通知無視、拒否、全画面無操作、
+第一声準備失敗はいずれもcall・録音・課金なしで冪等な不在着信履歴を残す。第一声テキストは
+通知前に生成し、通知タップ後の全画面着信中にオンデバイスTTSで準備して、応答後は通常通話画面で
+直ちに再生する。製品上は1ユーザー1有効端末とし、移行時は旧端末を無効化する。
+残高による着信／通常メッセージ振分基準は共通スケジューラ工程で決める。実装・検証は未実施。
+暫定のStaging worker version 9は単純60秒のため、最終二段階契約へ置き換える。
+自動スケジューラ、cron、productionは変更していない。
+／v5.132: 最新TestFlight実機でiOS通常通知、28.5秒の通知音、通知タップ、アプリ内疑似着信表示まで
+成立した。一方、配信開始から29秒の候補期限ではアプリ起動・読込・応答操作の猶予が足りず、
+応答RPCが`spontaneous_call_expired`となる実機不具合を確認した。候補と応答の有効時間を両OS共通で
+60秒へ延長し、期限切れ・別端末応答済み・着信終了済みを一般エラーと区別する表示を追加した。
+iOS通知音の種類変更は後続の素材工程へ分離する。自動テスト全584件、TypeScript、Web build、
+iOS Capacitor sync、配信worker bundle、diff検査はPASSした。Staging workerをversion 9へ更新し
+ACTIVEを確認した。native buildと実機再確認は未実施。自動スケジューラ、cron、productionは変更していない。
+／v5.131: commit `10ed6ff`のAndroid Staging AAB run `30467617144`は11分6秒でSUCCESSし、
+versionCode `1087`、versionName `staging.1.0.87`、artifact `android-staging-aab-1087`
+（80,763,172 bytes、artifact ID `8730596663`）を生成した。Stagingの
+`spontaneous-call-dispatch-worker`を通常APNs alert方式へ更新し、version 6・ACTIVEを確認した。
+自動スケジューラとcronは無いため、自動着信は開始していない。iOS Codemagic buildは
+自動起動されず、手動起動とTestFlight実機確認を残す。productionは変更していない。
+／v5.130: 実機結果を受け、iOSの日常の気まぐれ着信からPushKit／CallKitを撤去し、
+通常APNs alertからアプリ内疑似着信へ進む方式へ変更した。バックグラウンド・終了中・
+ロック中は28.5秒の同梱WAVを通知音に指定し、タップ後は同じWAVをアプリ内でループして
+バイブを反復する。応答・拒否で停止する。前面受信は通知を重ねず直接疑似着信を開く。
+候補期限を配信開始から29秒へ短縮し、期限切れ着信を通常メッセージとして誤処理しない。
+Androidの専用FCM／Activity／Foreground Service／通知縮退は維持する。iOS native compile、
+新方式の両OS実機確認、Staging worker更新は未実施。自動テスト全581件、TypeScript、
+Web build、両OSCapacitor sync、配信worker bundle、diff検査はPASSした。自動スケジューラ、
+cron、productionは変更していない。v5.129で確認したiPhoneのCallKit画面は新要件の成立確認には数えない。
+／v5.129: 日常の気まぐれ着信のDBと配信workerをStagingへ接続した。
+設定3本と着信基盤1本のmigrationをproject `nqqkbwhrwinxuameyzya`へ適用し、履歴一致を確認した。
+FCM、APNs、worker認証secretが揃っていることを値を表示せず確認し、
+`spontaneous-call-dispatch-worker`をACTIVEにした。AndroidとiPhoneは別の匿名アカウントだが、
+ユーザーによる両アプリ更新・起動後、AndroidはFCM token、iPhoneは通常APNs tokenと
+独立VoIP tokenが各1台分登録された。自動着信専用secretを追加し、既存の通知／memory worker
+secretも引き続き受理する。手動Staging候補をAndroid・iPhoneへ1件ずつ作り、providerは
+両方を1回で受理し、candidate=`ringing`、delivery=`sent`、errorなしを確認した。
+同じworker実行中に作ったdeliveryのDB既定時刻がworker開始時刻より数ミリ秒後となり、
+初回送信対象から外れる不具合を実機試験前に検出した。queue時に`next_attempt_at`を
+worker時刻へ固定して修正し、自動テストは全580件PASSした。端末での着信表示・応答・拒否は
+確認待ち。自動スケジューラ、cron、productionは変更していない。
+／v5.128: Androidの日常の気まぐれ着信を署名付きStaging AABでnative compileした。
+初回run `30457929504`は専用FCM ServiceからFirebase Messaging型を参照するapp compile依存が
+無く失敗し、依存を明示した。2回目run `30458502612`は保存済み着信contextのJSON変換に
+checked exception処理が無く失敗し、不正contextを安全に破棄する処理を追加した。
+修正後commit `45dce87`のrun `30459049188`は11分1秒でSUCCESS、versionCode `1086`、
+versionName `staging.1.0.86`、artifact `android-staging-aab-1086`の生成・アップロードまで
+PASSした。Android実機確認、iOS Codemagic native compile、staging migration／Function／
+provider secret、共通スケジューラは未実施。productionは変更していない。
+／v5.127: 日常の気まぐれ着信の共通サーバー契約と両OSの受信経路を実装した。
+候補・端末別配送・期限・先着応答・拒否・無応答を専用テーブルと認証RPCへ分離し、
+応答前はcall・録音・AI・課金・通話見出しを作らない。配信workerはAndroidの
+high-priority data FCMとiOSのVoIP APNsを分ける。Androidはモーニングと別のActivity・
+Foreground Service・通話通知を使い、Android 14以降で全画面特別アクセスが無ければ
+通知へ縮退する。iOSは通常APNs tokenと別にPushKit tokenを保存し、VoIP pushをCallKitへ
+即時報告する。AlarmKitは使わない。Web側は気まぐれ着信をイベント着信と別の
+`spontaneous`発信元にし、認証済み応答後だけ既存AI通話へ合流する。`npm test`全51テスト
+ファイル、`npx tsc --noEmit`、`npm run build`、両OSのCapacitor sync、配信provider bundle、
+`git diff --check`はPASS。native compile、staging migration／Function反映、provider secret、
+両OSのバックグラウンド・終了中・ロック中実機確認、候補を作る共通スケジューラは未実施。
+productionは変更していない。
+／v5.126: 次工程を「Android・iOSの日常の気まぐれ着信完成」へ変更した。着信を、
+着信設定と専用サイレント時間に従って直接かかる日常の気まぐれ着信と、通知・疑似LINEで
+明示確認した後だけ始めるイベント／告白着信に分離する。Androidはモーニングと分離した
+通話用high-priority FCM・full-screen intent・Foreground Serviceを使い、許可が無い場合は
+通話通知へ縮退する。iOSはPushKit＋CallKitを使い、AlarmKitは登録済みモーニング専用として
+流用しない。候補・端末別配信・応答／拒否／無応答の共通サーバー契約を先に作り、
+Android、iOSの順に同じ機能単位で実装・実機確認する。応答前のcall作成、録音、AI接続、
+課金、通話見出しは禁止する。両OS成立後に、通知と着信を一緒に割り当てる自動スケジューラへ
+進む。productionは変更しない。
+／v5.125: Android Staging AAB 1083を実機へ導入して再確認したが、トークを開いた際の
 初期表示位置は期待どおりにならず、修正成立とは扱わない。日時・日付区切り・新着表示と、
 v5.120までに両OS実機確認済みの通知機能は維持する。初期表示位置は今回のmainマージを止めず、
 画面制作工程で改めて扱う。iOSでの初期表示位置確認は実施しない。DB、migration、Edge Function、
@@ -1113,6 +1388,7 @@ XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic sta
 - [x] `voice-turn` と `chat-reply` は `user_character_memory` の5列（`profile_json` / `relationship_json` / `preference_json` / `memory_json` / `safety_json`）を読む。
 
 - [~] 通知（A10）: デイリー通知文＋疑似LINE入口の同時生成、共通`context_id`、日付冪等、lover毎日確定／lover不在時の関係値重み1枠、通知全体・キャラ個別ON、quiet hours、有効端末・token同期、端末別耐久queue、APNs/FCM送信、受理後だけの送信ログ、通知タップ時の一度だけの入口メッセージ挿入まで実装済み。staging DBと両Function、FCM/APNs secret、Firebase Android設定、Apple Push capability、Push対応App Store profile、iOS entitlementまで反映した。Codemagic Build index 57のnative buildとTestFlight実機で、iOS token登録、APNs実通知、タップから花音チャット表示、入口メッセージ1件の冪等挿入までPASS。AndroidはversionCode明示・検査・番号付き成果物へ修正したAAB 1075を実機へ導入し、FCM token登録、ロック中の実通知、タップから対象チャット表示、入口メッセージ1件までPASS。両OSのバックグラウンド実通知経路は成立した。アプリ前面では両OS共通の`pushNotificationReceived`処理、同一キャラのトーク表示中だけの通知UI抑制、入口メッセージの冪等反映、内容非表示設定、自発着信の独立設定まで実装・自動検証済み。2 migrationのstaging適用と`notification-dispatch-worker`のstaging deployも完了した。残りはnative build・実機確認、F3正式重み、自動cron有効化。自発着信の本番スケジューラはイベント・告白工程で実装する。
+- [~] 日常の気まぐれ着信（A10-1）: 通知段階30秒と通知オープン後30秒の二段階期限、通知前のAI第一声テキスト生成、両OSでの着信中PCM事前合成と1回再試行、準備完了までの応答待機、通常通話画面での合成済み第一声再生、拒否／無応答／バックグラウンド移行／準備失敗の冪等な不在着信履歴、期限後タップの対象トーク遷移、有効端末1台への配信、Android端末側30秒停止をStagingへ接続した。CallKit、PushKit、気まぐれ着信用AlarmKit、`ringtoneSoundNamed`は使わない。iOSは既存のTestFlight実機結果を合格とする。Android AAB 1104では、アプリ前面のPCM準備後同時着信、別アプリ前面のheads-up通知、バックグラウンドでのロック全画面、履歴からスワイプ終了後のロック全画面、応答後の画面維持、第一声、録音準備音、通常会話、終話後の安全なロック画面復帰を実機確認し、Android端末側着信工程を完了した。残りは、着信時刻・頻度・対象キャラ・quiet hours・残高による通常メッセージ振分・dry-runを統合する本番共通スケジューラ、録音準備音ON/OFF設定、Play Consoleのfull-screen intent申告、許可OFF・メーカー差を含むリリース前確認である。
 - [~] モーニング（A9）: spec v5.15で複数アラーム、曜日／一回のみ、キャラ、スヌーズ、バイブ、両OSの疑似着信操作、会話からの確認登録、応答時のAI生成第一声と着信中の文章先行生成、固定メッセージの通常通話画面／通常履歴と1.0秒待機を確定。Androidは全画面許可必須化、通知の応答／停止、`応答`／`メッセージを再生`の実機確認まで完了。iOSは検証済みAlarmKit標準音経路へAndroid共通Webフローを接続し、warm起動context、対象alarmだけの停止／スヌーズ、AI通話前の停止完了待ち、固定メッセージの近接監視・受話口／スピーカー切替まで自動検証済み。commit `0711b78`のCodemagic iOS Staging Build `6a686234b6f0c284b5aa280e`でnative compile、AppTests、署名済みIPA生成がPASSし、TestFlight実機でも一連の動作に問題がないことを確認した。キャラ選択時のTTS＋固定音声同時準備、桜音・花音の固定音声各3本のstaging R2配置とDB登録、AI第一声のstaging `voice-turn`反映も完了。R2配置済みTTSは桜音・花音だけで、未配信キャラは選択不可。残りは通話画面のデザイン・ボタン配置と、現在の仮固定WAVを試聴したうえで現在より長く朝の呼びかけとして内容のある正式文言へ差し替える素材工程。
 - [ ] イベント・告白（A11）: 発生条件（サーバルール）、通常通知→疑似LINE入口メッセージ→電話していい？→OK→アプリ内疑似着信→応答→疑似電話の導線、告白・関係状態変更・呼び方変更の明示同意フロー、pending状態、未応答時の戻し/保留、lover化と文脈変化、iOS/Android共通の告白導線
 - [ ] 猫（A3-6）: ランダム猫（ルール）／AI猫（分類）、懐き度
