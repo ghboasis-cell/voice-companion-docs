@@ -1,6 +1,128 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.156 ／ 最終更新日: 2026-07-31**
+**版数: v5.170 ／ 最終更新日: 2026-08-01**
+
+（v5.170: F3 v2の`common-contact-scheduler`をstagingへdeployし、ACTIVE version 10、
+更新時刻2026-08-01 10:49:24 UTCを確認した。今日すでに保存済みの枠は変更せず、次回新しく
+計画する現地日付から親密度の連続補正を適用する。productionは未変更。）
+
+（v5.169: A10-2の気まぐれ抽選をF3 v2へ修正した。v5.168までは連絡量3段階の基準率だけで
+発生を決めてから関係値で相手を選んでいたため、所有キャラが1人だと関係が深くなっても発生率が
+変わらなかった。相手を先に関係値重みで選び、そのキャラの親密度0〜100を倍率0.75〜1.25へ
+連続変換して、少なめ7%／ふつう15%／多め45%の基準率へ掛けるよう変更した。親密度1点ごとに
+倍率0.005ずつ変わり、relationship stateやaffinity levelの段階変更では急変しない。複数キャラの
+選択重みも`1 + intimacy_score÷20`へ変更し、25点ごとの切り捨てを廃止した。F3 v1の安全上限、
+時間帯、近接回避、休眠、着信振分は維持する。productionは未変更。）
+
+（v5.168: A10-2に関するF3 v1をspec v5.34で正式化した。少なめは週約4回、ふつうは
+週約8回、多めは週約9〜10回とし、デイリー発生率50%／100%／100%、気まぐれ発生率
+7%／15%／45%、気まぐれ上限1日1回・週3回とした。配信8:00〜21:59、同一キャラ6時間、
+別キャラ90分、利用者からの連絡後3時間、モーニング前後90分、7日休眠45%、30日休眠20%、
+休眠中は通知のみ、着信最低残高3、無料のみ着信率45%、1日最大1着信を正式値とした。
+暫定config名と`provisional-f3`記録を`SCHEDULER_CONFIG`／`f3-v1`へ変更し、3段階の差が
+体感できるよう少なめを従来約5回から約4回、多めを従来約9回から約9〜10回へ調整した。
+productionは未変更。）
+
+（v5.167: `agent/common-contact-scheduler-build`の最新アプリをiPhone・Androidの両方で実機確認した。
+設定画面に連絡量「少なめ／ふつう／多め」が表示されること、録音準備音をON/OFFできること、
+OFFでは準備音だけを省いて従来と同じタイミングで録音が再開し、ONでは準備音が鳴ることを確認し、
+ユーザー報告「両方確認、問題なし」となった。AndroidはAAB 1105、iOSはユーザーがCodemagicから
+build・導入したstagingアプリによる確認で、Codemagic build ID/indexは未記録。これにより連絡量設定と
+録音準備音ON/OFFのnative build・両OS実機確認をPASSとする。F3の正式頻度・確率とproduction反映は未実施。）
+
+（v5.166: A10-2・連絡量3段階・録音準備音ON/OFFを含むcommit `437177c`を、
+Android Staging AAB workflow run `30692726678`（run number 105）でnative buildした。
+staging Supabase設定、TTS bundle設定、Web build、Capacitor sync、Rust/NDK、署名付きAAB生成、
+artifact uploadはすべてSUCCESS。versionCode `1105`、versionName `staging.1.0.105`、artifact
+`android-staging-aab-1105`（80,771,777 bytes、artifact ID `8816346261`）を確認した。
+Android実機での連絡量保存と録音準備音ON/OFFは未確認。iOSはユーザーがCodemagicでbuildするため
+こちらからは起動せず、対象branch `agent/common-contact-scheduler-build`をpush済み。
+productionは未変更。）
+
+（v5.165: A10-2のJIT配信をstaging実機で完了確認した。修正版反映後、当日分の既存2枠だけを
+試験用に再設定し、iPhoneはJST 17:25、Androidは17:30に通常通知を受信した。続いて同じ2枠を
+着信へ切り替え、iPhoneは17:40、Androidは17:46に気まぐれ着信を受信した。利用者からの返信・発信は
+無かったため3時間後ろ倒し条件には該当していない。試験変更は2026-08-01の2枠だけで、通常plannerの
+現地時刻8:00〜21:59、quiet hours、モーニング前後90分回避、翌日以降の日次計画は変更していない。
+これにより通知／着信とも、due検出、送信直前生成、Push配信、両OS受信までPASSとする。
+productionは未変更。連絡量3段階と録音準備音ON/OFFを含む最新native build・実機確認は次工程。）
+
+（v5.164: JIT通知の初回実時刻検証で、JST 15:56のiPhone通知が届かなかった原因を修正した。
+通知文と端末別queueは正常に作成されていたが、配信workerが起動時刻を固定した後、約1秒後に作成された
+queueの`next_attempt_at`を同じ固定時刻と比較して対象外にしていた。旧常時配信cronはJIT化で停止済みだったため、
+そのqueueを拾う次回起動もなかった。queue作成時に明示的な実行時刻を設定し、作成後の現在時刻で取得するよう
+変更した。再試行待ちが存在する場合だけ既存の1分due確認から配信workerを起動し、通知の通信失敗再試行は
+1回までとした。30分を過ぎた通知候補は送らず終了し、修正反映前の15:56分も遅れて突然届かないよう
+`superseded_by_delivery_repair`で終了した。stagingへ`notification-dispatch-worker` version 23と
+forward migration `20260801180000`を反映済み。全603 test、TypeScript、diff検査はPASS。
+次のJIT予定（Android JST 21:27）で実端末受信を確認する。productionは未変更。）
+
+（v5.163: staging Security AdvisorのWARN 54件をManagement APIで取得し監査した。
+37件は匿名サインインを使う本アプリに対して同一警告が対象tableごとに表示されたもので、匿名初回利用を
+維持するため許容する。16件はauthenticatedから実行できる`SECURITY DEFINER` RPCで、各RPCの
+ログイン解決・本人所有・対象行・実行権限を照合した。15件は本人所有確認済み。1件、
+`confirm_morning_alarm_proposal`が任意入力の`p_device_installation_id`を本人端末へ再照合していなかったため、
+app user、`auth.uid()`、platform、有効状態をすべて確認し、確定済みalarmのownerも再確認するforward migrationを
+stagingへ適用した。RPCは正常なアプリ機能に必要なため、Advisorの形式警告を消す目的で実行権限は剥奪しない。
+残る1件は漏洩パスワード保護OFFで、現行の匿名ログインにはパスワード経路がないため、パスワード認証導入前の
+必須設定とする。関連9 test suiteとdiff検査はPASS。Performance Advisorの52件とDB lintの未使用変数1件は
+別監査対象であり、本更新では変更していない。productionは未変更。）
+
+（v5.162: A8-2の録音準備音ON/OFF設定を実装した。`settings.recording_ready_cue_enabled`は
+既定ONとし、設定画面で保存して全通話開始時にAndroid・iOS nativeへ同じbooleanを渡す。
+OFF時は音声出力だけを省略し、Androidは既存の140ms、iOSは既存音長相当の100msを待ってから
+従来と同じ録音再開callbackへ進む。停止・reset時は遅延処理を取消し、終了後の録音再開を防ぐ。
+TypeScript、対象3 test suite、Web build、diff検査はPASS。DB migrationはstaging適用済み。
+native compile、両OSの設定ON/OFF実機確認、productionは未実施。）
+
+（v5.161: A10-2を、全settings利用者を毎分走査して文章まで先行生成する試作方式から、
+有効かつ通知許可済みPush tokenを持つ利用者だけを対象にするJIT方式へ変更した。30分ごとのplannerは
+利用者の現地日付ごとに原子的な計画済み印を一度だけ取得し、8:00〜22:00の許可範囲から1分単位の
+不規則な時刻を保存する。1分cronはDBのdue存在確認だけを行い、期限到来がなければEdge Functionを
+起動しない。期限到来時に最新の日次要約と直近チャットを読み、通知文を送信直前に生成する。生成中に
+利用者から同じキャラへの発信・チャットがあれば候補を破棄し、3時間後へ後ろ倒しして次回は新しい文を
+生成する。通知生成は1回再試行後に終了し、通知枠は30分超、着信枠は2分超の遅延を送らない。
+着信の30秒期限はscheduler間隔ではなく、第一声生成後にdispatch workerが実際の着信配信を始めた時点から
+設定する既存契約を維持した。旧prototype枠と旧通知候補は監査用に保持するが、新方式の送信対象から除外した。
+stagingへmigration 7件と`common-contact-scheduler`、`daily-notification-worker`、
+`notification-dispatch-worker`を反映し、dry-runを`true`へ戻した。有効対象は2端末・2ユーザー、
+JIT枠は2件（JST 15:56、21:27）、計画済み印も2件、候補本文は未生成であることを確認した。
+dueなしRPCは`null`を返しEdge起動なし。ローカルは全52 test suite、TypeScript、Web build、
+3 Function bundle、diff検査がPASS。実際の時刻到来時の実通知・実着信とproductionは未確認・未変更。）
+
+（v5.160: staging実データでA10-2のdry-run着信判定を確認した。残高基準以上の4ユーザー・8キャラを
+今後30日分で非配信予測し、5日・5件の着信判定を確認した。その後、自動cronで実際に
+`dry_run_call=true`のdaily枠が1件作られ、通知候補あり・着信候補なしへ安全に振り替わったことを確認した。
+切替条件を満たしたため、stagingの`COMMON_CONTACT_SCHEDULER_DRY_RUN`を`false`へ変更した。
+手動page 0と自動cronの双方で`dry_run:false`、HTTP 200、timeoutなしを確認し、既存当日枠の冪等再実行では
+重複候補0件だった。今後の未割当判定から実着信候補を作る。実着信候補の生成・端末配信・応答、
+productionは未確認・未変更。）
+
+（v5.159: A10-2をstagingへ反映した。migration 2件を適用し、`common-contact-scheduler`と
+`daily-notification-worker`をdeploy、staging専用secretをEdge FunctionsとVaultへ同期した。
+初回の全222ユーザー一括dry-runは79枠を作成した後にpg_netの55秒でtimeoutしたため、30ユーザー×17 shardを
+毎分ローテーションする方式へ変更した。修正版は手動page 0で30ユーザーをHTTP 200、
+`dry_run:true`、作成0・変更0の冪等再実行まで確認し、自動cronでも共通スケジューラと通知／着信配信workerの
+HTTP 200継続を確認した。初回79枠はすべて通知で、実着信は0件。stagingは残高基準以上4ユーザー、
+購入・サブスクlot保有0ユーザーのため、dry-run着信候補0件は異常とは判定しない。実着信への切替、
+staging実配信・実機確認、productionは未実施。）
+
+（v5.158: A10-2の共通スケジューラをローカル実装した。デイリー／気まぐれを同じ冪等な割当へ統合し、
+lover全員＋非lover 1枠、気まぐれの関係値重み、通知／着信振分、1日1着信、無料のみの着信率低下、
+休眠減衰、3段階の連絡量、現地時刻抽選、既定夜間・quiet hours・モーニング・同一／別キャラ近接回避、
+ユーザー発信後の後ろ倒し／当日中止、dry-runを実装した。`contact_schedule_slots`、
+`settings.contact_volume_level`、`users.last_active_at`、活動更新RPC、30ユーザー×17 shardの毎分割当cronと両配信workerの毎分cronを
+追加した。暫定値はF3差替え用moduleへ隔離した。`npm test`、`npx tsc --noEmit`、`npm run build`、
+`git diff --check`はPASS。migration適用、Function deploy、vault/secret設定、staging実配信、実機確認は未実施。）
+
+（v5.157: spec v5.33で通知・着信の共通スケジューラ（A10-2）を確定したことに伴い、本書の記述を直した。
+フェーズ3へ「通知・着信の共通スケジューラ（A10-2）」を独立した項目として追加し、通知（A10）に残っていた
+「自動cron有効化」と、日常の気まぐれ着信（A10-1）に残っていた「本番共通スケジューラ」をここへ集約した。
+スケジューラを作る工程が、通知の行では「イベント・告白工程で実装する」、着信の行では「本番共通スケジューラ」と
+二通りに書かれていた矛盾を解消した。あわせて、モーニング（A9）の行が「キャラ選択時のTTS＋固定音声同時準備」を
+完了と書き、「キャラ選択時のモデル事前取得」節が同じ内容を実機確認待ちの`[~]`としていた食い違いを直し、
+節の`[~]`を正とした。本更新は文書のみで、コード、DB、migration、Supabase、Edge Function、R2、env、secret、
+productionは変更しない。）
 
 （v5.156: AAB 1104をAndroidへ導入した。アプリがバックグラウンドに残るロック中では、全画面着信、
 応答後の通話画面維持、第一声、録音準備音、通常会話まで成立した。履歴からスワイプ終了後のロック中でも
@@ -1357,9 +1479,9 @@ XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic sta
 
 **録音準備音のON/OFF設定（A8-2・両OS共通）:**
 
-- [ ] 設定画面に「録音準備音を鳴らす／鳴らさない」を追加する。既存のデザインテーマ切替と同じ形で置く。既定値はF1で決める。
-- [ ] 設定をAndroid・iOSのnativeへ渡し、両OSで同じ動きにする。片OSだけ先行して製品挙動を変えない。
-- [ ] 鳴らさない設定のときも、録音再開のタイミング自体は変えない。音を出さないだけとする。
+- [~] 設定画面に「AIの発話後に録音準備音を鳴らす」を追加し、既定ONとしてDBへ保存する。staging migrationとローカルWeb buildは完了、アプリ反映と実機確認待ち。
+- [~] 設定を全通話開始時にAndroid・iOSのnativeへ渡し、両OSで同じ動きにした。native compileと両OS実機確認待ち。
+- [x] 鳴らさない設定でも、Androidは既存140ms、iOSは音長相当100msの無音待機後に同じ完了callbackから録音を再開する。停止・reset時は待機を取り消す。
 
 **本番ビルドの配信設定検査（リリース直前・フェーズ4）:**
 
@@ -1387,9 +1509,10 @@ XCTest 38件(取り込み22・取得16)とNode 12件で検証し、Codemagic sta
 - [~] 日次処理モデルは`MEMORY_LLM_MODEL`で変更可能にした。複数モデルの比較と採用モデル確定は未実施。
 - [x] `voice-turn` と `chat-reply` は `user_character_memory` の5列（`profile_json` / `relationship_json` / `preference_json` / `memory_json` / `safety_json`）を読む。
 
-- [~] 通知（A10）: デイリー通知文＋疑似LINE入口の同時生成、共通`context_id`、日付冪等、lover毎日確定／lover不在時の関係値重み1枠、通知全体・キャラ個別ON、quiet hours、有効端末・token同期、端末別耐久queue、APNs/FCM送信、受理後だけの送信ログ、通知タップ時の一度だけの入口メッセージ挿入まで実装済み。staging DBと両Function、FCM/APNs secret、Firebase Android設定、Apple Push capability、Push対応App Store profile、iOS entitlementまで反映した。Codemagic Build index 57のnative buildとTestFlight実機で、iOS token登録、APNs実通知、タップから花音チャット表示、入口メッセージ1件の冪等挿入までPASS。AndroidはversionCode明示・検査・番号付き成果物へ修正したAAB 1075を実機へ導入し、FCM token登録、ロック中の実通知、タップから対象チャット表示、入口メッセージ1件までPASS。両OSのバックグラウンド実通知経路は成立した。アプリ前面では両OS共通の`pushNotificationReceived`処理、同一キャラのトーク表示中だけの通知UI抑制、入口メッセージの冪等反映、内容非表示設定、自発着信の独立設定まで実装・自動検証済み。2 migrationのstaging適用と`notification-dispatch-worker`のstaging deployも完了した。残りはnative build・実機確認、F3正式重み、自動cron有効化。自発着信の本番スケジューラはイベント・告白工程で実装する。
-- [~] 日常の気まぐれ着信（A10-1）: 通知段階30秒と通知オープン後30秒の二段階期限、通知前のAI第一声テキスト生成、両OSでの着信中PCM事前合成と1回再試行、準備完了までの応答待機、通常通話画面での合成済み第一声再生、拒否／無応答／バックグラウンド移行／準備失敗の冪等な不在着信履歴、期限後タップの対象トーク遷移、有効端末1台への配信、Android端末側30秒停止をStagingへ接続した。CallKit、PushKit、気まぐれ着信用AlarmKit、`ringtoneSoundNamed`は使わない。iOSは既存のTestFlight実機結果を合格とする。Android AAB 1104では、アプリ前面のPCM準備後同時着信、別アプリ前面のheads-up通知、バックグラウンドでのロック全画面、履歴からスワイプ終了後のロック全画面、応答後の画面維持、第一声、録音準備音、通常会話、終話後の安全なロック画面復帰を実機確認し、Android端末側着信工程を完了した。残りは、着信時刻・頻度・対象キャラ・quiet hours・残高による通常メッセージ振分・dry-runを統合する本番共通スケジューラ、録音準備音ON/OFF設定、Play Consoleのfull-screen intent申告、許可OFF・メーカー差を含むリリース前確認である。
-- [~] モーニング（A9）: spec v5.15で複数アラーム、曜日／一回のみ、キャラ、スヌーズ、バイブ、両OSの疑似着信操作、会話からの確認登録、応答時のAI生成第一声と着信中の文章先行生成、固定メッセージの通常通話画面／通常履歴と1.0秒待機を確定。Androidは全画面許可必須化、通知の応答／停止、`応答`／`メッセージを再生`の実機確認まで完了。iOSは検証済みAlarmKit標準音経路へAndroid共通Webフローを接続し、warm起動context、対象alarmだけの停止／スヌーズ、AI通話前の停止完了待ち、固定メッセージの近接監視・受話口／スピーカー切替まで自動検証済み。commit `0711b78`のCodemagic iOS Staging Build `6a686234b6f0c284b5aa280e`でnative compile、AppTests、署名済みIPA生成がPASSし、TestFlight実機でも一連の動作に問題がないことを確認した。キャラ選択時のTTS＋固定音声同時準備、桜音・花音の固定音声各3本のstaging R2配置とDB登録、AI第一声のstaging `voice-turn`反映も完了。R2配置済みTTSは桜音・花音だけで、未配信キャラは選択不可。残りは通話画面のデザイン・ボタン配置と、現在の仮固定WAVを試聴したうえで現在より長く朝の呼びかけとして内容のある正式文言へ差し替える素材工程。
+- [~] 通知（A10）: デイリー通知文＋疑似LINE入口の同時生成、共通`context_id`、日付冪等、lover毎日確定／lover不在時の関係値重み1枠、通知全体・キャラ個別ON、quiet hours、有効端末・token同期、端末別耐久queue、APNs/FCM送信、受理後だけの送信ログ、通知タップ時の一度だけの入口メッセージ挿入まで実装済み。staging DBと両Function、FCM/APNs secret、Firebase Android設定、Apple Push capability、Push対応App Store profile、iOS entitlementまで反映した。Codemagic Build index 57のnative buildとTestFlight実機で、iOS token登録、APNs実通知、タップから花音チャット表示、入口メッセージ1件の冪等挿入までPASS。AndroidはversionCode明示・検査・番号付き成果物へ修正したAAB 1075を実機へ導入し、FCM token登録、ロック中の実通知、タップから対象チャット表示、入口メッセージ1件までPASS。両OSのバックグラウンド実通知経路は成立した。アプリ前面では両OS共通の`pushNotificationReceived`処理、同一キャラのトーク表示中だけの通知UI抑制、入口メッセージの冪等反映、内容非表示設定、自発着信の独立設定まで実装・自動検証済み。2 migrationのstaging適用と`notification-dispatch-worker`のstaging deployも完了した。残りはnative build・実機確認、F3正式重み、自動cron有効化。自動cron有効化と自発着信の本番スケジューラは、下の「通知・着信の共通スケジューラ（A10-2）」へ集約する。
+- [~] 日常の気まぐれ着信（A10-1）: 通知段階30秒と通知オープン後30秒の二段階期限、通知前のAI第一声テキスト生成、両OSでの着信中PCM事前合成と1回再試行、準備完了までの応答待機、通常通話画面での合成済み第一声再生、拒否／無応答／バックグラウンド移行／準備失敗の冪等な不在着信履歴、期限後タップの対象トーク遷移、有効端末1台への配信、Android端末側30秒停止をStagingへ接続した。CallKit、PushKit、気まぐれ着信用AlarmKit、`ringtoneSoundNamed`は使わない。iOSは既存のTestFlight実機結果を合格とする。Android AAB 1104では、アプリ前面のPCM準備後同時着信、別アプリ前面のheads-up通知、バックグラウンドでのロック全画面、履歴からスワイプ終了後のロック全画面、応答後の画面維持、第一声、録音準備音、通常会話、終話後の安全なロック画面復帰を実機確認し、Android端末側着信工程を完了した。残りは、着信時刻・頻度・対象キャラ・quiet hours・残高による通常メッセージ振分・dry-runを統合する本番共通スケジューラ（下の「通知・着信の共通スケジューラ（A10-2）」へ集約）、録音準備音ON/OFF設定、Play Consoleのfull-screen intent申告、許可OFF・メーカー差を含むリリース前確認である。
+- [~] モーニング（A9）: spec v5.15で複数アラーム、曜日／一回のみ、キャラ、スヌーズ、バイブ、両OSの疑似着信操作、会話からの確認登録、応答時のAI生成第一声と着信中の文章先行生成、固定メッセージの通常通話画面／通常履歴と1.0秒待機を確定。Androidは全画面許可必須化、通知の応答／停止、`応答`／`メッセージを再生`の実機確認まで完了。iOSは検証済みAlarmKit標準音経路へAndroid共通Webフローを接続し、warm起動context、対象alarmだけの停止／スヌーズ、AI通話前の停止完了待ち、固定メッセージの近接監視・受話口／スピーカー切替まで自動検証済み。commit `0711b78`のCodemagic iOS Staging Build `6a686234b6f0c284b5aa280e`でnative compile、AppTests、署名済みIPA生成がPASSし、TestFlight実機でも一連の動作に問題がないことを確認した。桜音・花音の固定音声各3本のstaging R2配置とDB登録、AI第一声のstaging `voice-turn`反映も完了。キャラ選択時のTTS＋固定音声同時準備は実装済みだが両OSのnative compile・実機確認が未のため、状態は上の「キャラ選択時のモデル事前取得（A8-3完成仕様・追加キャラ導線と同時に実装）」節の`[~]`を正とする。R2配置済みTTSは桜音・花音だけで、未配信キャラは選択不可。残りは通話画面のデザイン・ボタン配置と、現在の仮固定WAVを試聴したうえで現在より長く朝の呼びかけとして内容のある正式文言へ差し替える素材工程。
+- [~] 通知・着信の共通スケジューラ（A10-2）: デイリー枠と気まぐれ枠の共通割当、lover全員＋非lover 1枠、気まぐれ対象の重み選択、通知／着信振分、quiet hoursと既定夜間帯、ユーザー発信後の3時間後ろ倒し／当日中止、同一／別キャラの近接回避、1日最大1着信、無料のみの着信割合低下、休眠減衰、連絡量3段階を実装した。対象は有効かつ通知許可済みPush tokenを持つ利用者だけとし、30分plannerは現地日付ごとに一度だけ分単位の不規則な時刻を保存する。1分cronはdueのDB存在確認だけを行い、due時だけEdgeを起動して最新会話から通知文／着信第一声を生成する。着信30秒期限は第一声生成後の実dispatch開始時から数える。旧prototype候補は送信対象外。stagingの有効2端末・2ユーザーで、通知／着信の送信直前生成と両OS受信、連絡量設定、録音準備音ON/OFFまで実機PASS。F3 v2では連絡量3段階を基準率とし、親密度1点ごとの連続補正で1キャラでも関係が深いほど気まぐれが増え、複数キャラでは深い相手ほど選ばれやすくした。正式値はspec v5.35および`SCHEDULER_CONFIG`へ固定し、staging Function version 10へdeploy済み。残りはproduction反映判断である
 - [ ] イベント・告白（A11）: 発生条件（サーバルール）、通常通知→疑似LINE入口メッセージ→電話していい？→OK→アプリ内疑似着信→応答→疑似電話の導線、告白・関係状態変更・呼び方変更の明示同意フロー、pending状態、未応答時の戻し/保留、lover化と文脈変化、iOS/Android共通の告白導線
 - [ ] 猫（A3-6）: ランダム猫（ルール）／AI猫（分類）、懐き度
 
