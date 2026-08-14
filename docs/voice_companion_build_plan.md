@@ -1,6 +1,20 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.198 ／ 最終更新日: 2026-08-12**
+**版数: v5.205 ／ 最終更新日: 2026-08-14**
+
+（v5.205: **iPhone日時入力の最大240px案は、実機で他フォームより短すぎるため不採用**（spec v5.70）。commit `492eeef`のCSSはbranchに残っているが未解決・実機FAILとして引き継ぐ。次担当は固定上限240pxを外し、`overflow:hidden`を外した状態だけを保って通常幅へ戻す切り分けから行う。自動テストでは見た目を判定できないため、iPhone実機で他フォームと並べて確認する。）
+
+（v5.204: **iPhone実機で日時入力の右端が引き続き欠けたため、18px短縮を廃止し、最大240pxかつ親幅より32px短い幅へ変更した**（spec v5.69）。WebKit内部部品を切っていた`overflow:hidden`も日時入力と親ラベルから除去した。新しいiPhoneビルドで実機再確認が必要。Android表示には適用しない。）
+
+（v5.203: commit `b5798cb`からAndroid Staging AAB workflow run `31787132224`が11分12秒でSUCCESS。versionCode `1190`、artifact `android-staging-aab-1190`（80,861,718 bytes、artifact ID `9214226039`）を生成・アップロードした。AAB 1189はこの追加UI変更を含まないため、以後のAndroid実機確認は1190を使う。実機未確認。）
+
+（v5.202: **個別トーク上部のキャラ名左に、現在のキャラ画像を38pxで1枚だけ表示した**（spec v5.68）。各メッセージ横には置かず、本文幅と縦方向の見やすさを維持する。変更画像と標準画像のどちらも既存の共通表示経路を使う。自動検証PASS、iPhone実機確認は未実施。）
+
+（v5.201: **iPhone実機で、サイレント時間とモーニングコールの時刻・日付が枠内には収まったものの右端が欠けたため、iOSだけ入力欄自体を親幅より18px短くした**（spec v5.67）。トーク一覧・キャラ一覧の小画像は角丸を20px相当から10pxへ寄せ、通話画面は端末高に応じ128〜168px、キャラ個別画面は160pxへ拡大した。個別トークのキャラ画像を各メッセージ横または上部だけへ置く案は利用者との相談待ちで、まだ実装していない。自動検証後のiPhone実機確認を残す。）
+
+（v5.200: **実機指摘8件と、LLMが現在の名前・性別を認識しない不具合を修正した**（spec v5.66）。初回設定にも端末内キャラ画像の変更を置き、保存前に拡大・上下左右位置を選ぶ切り抜き画面を追加した。氏名かな欄はTTSの正しい読みのため残して用途を表示し、誕生日欄の「年は登録しません」は削除した。ユーザー性別は女性／男性／答えないを追加し、既存のキャラ性別とともに全文章生成経路へ渡す。キャラ名には任意の読みを追加し音声で優先する。通話の合図音文言、引き継ぎの戻るボタン、iPhoneのサイレント時間・アラーム時刻日付の幅を修正した。チャットと通話の両Edge Functionは変更後のキャラ名を優先し、チャットにもユーザーの呼び名・氏名を渡す。migration `20260814110000`をstaging適用し、`chat-reply` v53、`voice-turn` v68、`daily-notification-worker` v47、`spontaneous-call-dispatch-worker` v37、`memory-worker` v47をdeploy済み。自動検証はPASS。commit `2b13292`からAndroid AAB 1189（run `31778436649`、artifact `android-staging-aab-1189`）の生成もPASS。**新しいAndroid/iPhoneビルドでの実機確認は未実施。**）
+
+（v5.199: **プロフィールの誕生日（月日）、設定画面の整理、キャラ個別設定を実装した**（spec v5.65）。初回登録では氏名・ふりがなに加えて生年なしの誕生日を必須にし、後からプロフィールで編集できる。`public.users`へ月日を追加するforward migrationを作り、チャットと通話のLLM文脈へ渡した。設定トップを合意した9項目の入口に統一し、通知・着信、通話、デザインを詳細画面へ分離した。キャラ別通知と恋愛イベントをキャラ画面へ移し、DB保存・引き継ぎ対象のキャラ名変更と初期名への復帰、端末内IndexedDBだけへ保存するキャラ画像変更と標準画像への復帰を追加した。画像は中央正方形・最大1024pxのJPEGに整え、引き継げない旨を引き継ぎ画面へ表示する。iPhoneの時刻入力欄がはみ出さないCSSも追加した。**iPhone課金の時限テストが終わるまで、migration・Edge Function・stagingアプリには反映しない。実機未確認。**）
 
 （v5.198: v5.197の有償コイン無期限化・退会時全消滅をstagingへ反映した。migration `20260812100000_make_paid_coins_permanent_and_forfeit_on_deletion.sql` はstaging project `nqqkbwhrwinxuameyzya`へ適用済みで、remote migration一覧との一致を確認した。`revenuecat-webhook` も同projectへdeploy済み。commit `52a9147`からAndroid Staging AAB workflow run `31566852903`を起動し、10分10秒でSUCCESSした。versionCode `1177`、artifact `android-staging-aab-1177`（80,851,953 bytes、artifact ID `9129968864`）を生成・アップロード済み。変更後の退会・再登録・購入通知を使った実機確認は未実施。productionは未変更。）
 
