@@ -1486,8 +1486,10 @@ FP32のSHA-256が既に載っている**（モーニング固定音声はここ�
 - [x] bundle生成workflowを台帳から作る形にした（2026-08-16）。桜音・花音の直書きをやめ、
       `voices` で作る声を選べるようにし、1声ずつ後始末して端末のディスクを食い潰さないようにした。
       R2の置き場所（`r2_upload_manifest.staging.json`）にも7キャラ分を書き、その回に作った分だけを
-      アップロードする（`bundle-index.json`）。**まだCIで実際には回していない**
-- [ ] 残り5キャラのbundleをCIで生成する
+      アップロードする（`bundle-index.json`）
+- [x] 残り5キャラのbundleをCIで生成した（2026-08-16、run `31901115267`、5分46秒、
+      artifact `on-device-tts-staging-bundles` 1,600,792,772 bytes ＝ 共通1本＋まお・コハク・
+      にせ・fumifumi・猩々博士の5本）。先に まお 1体だけの run `31900852560` で通し確認済み
 - [ ] 生成したbundleをR2へアップロードする（`Upload on-device TTS bundles to R2` を手動実行）
 - [ ] `VITE_TTS_CHARACTER_BUNDLES` へ5キャラ分を足す（GitHub変数とCodemagicの両方。**利用者の作業**）
 - [ ] 端末で、追加したキャラの声が鳴ることを確認する
