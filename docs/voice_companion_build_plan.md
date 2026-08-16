@@ -1490,8 +1490,12 @@ FP32のSHA-256が既に載っている**（モーニング固定音声はここ�
 - [x] 残り5キャラのbundleをCIで生成した（2026-08-16、run `31901115267`、5分46秒、
       artifact `on-device-tts-staging-bundles` 1,600,792,772 bytes ＝ 共通1本＋まお・コハク・
       にせ・fumifumi・猩々博士の5本）。先に まお 1体だけの run `31900852560` で通し確認済み
-- [ ] 生成したbundleをR2へアップロードする（`Upload on-device TTS bundles to R2` を手動実行）
-- [ ] `VITE_TTS_CHARACTER_BUNDLES` へ5キャラ分を足す（GitHub変数とCodemagicの両方。**利用者の作業**）
+- [x] 生成したbundleをR2へアップロードした（2026-08-16、run `31921900764`）。保存後のサイズと
+      SHA-256の読み戻し、公開URLからの取得まで確認済み。公開URLで7キャラ全員が取れる
+      （まお 256,446,110／コハク 253,736,037／にせ 248,649,187／fumifumi 268,558,737／
+      猩々博士 259,149,445 bytes）
+- [ ] `VITE_TTS_CHARACTER_BUNDLES` へ5キャラ分を足す（GitHubのstaging環境変数と、iOSはCodemagicの
+      環境変数グループ。**2か所ある。片方だけ入れると、そのOSのビルドで声が出ない**）
 - [ ] 端末で、追加したキャラの声が鳴ることを確認する
 
 **D. まだ作っていない機能**
