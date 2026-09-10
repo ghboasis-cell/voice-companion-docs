@@ -1,6 +1,46 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.292 ／ 最終更新日: 2026-09-09**
+**版数: v5.293 ／ 最終更新日: 2026-09-09**
+
+（v5.293: **iOS電話約束の着信音を修正した。コード・自動テスト確認済み、実機確認は未実施。**
+
+### 実機報告と原因
+
+- iOSで、AlarmKit音が全画面着信になって少しすると途中停止すると報告された。
+  コード調査で、`purpose=talk`の`scheduleTalkPromiseRingDeadline()`が予約時刻＋30秒に
+  `endTalkPromiseRing()`を呼び、全画面表示中でも`MorningFlow.stopActiveAlarm()`まで進むことを
+  確認した。画面表示が遅れるほど、表示後の鳴動時間が短くなる経路だった。
+- 静かな電話約束（`audible_in_silent_mode=false`）は、`quietAlarmRequests()`から
+  `LocalNotifications.schedule()`へ渡す通知にsound指定がなく、通常モードでも無音だった。
+
+### 修正内容
+
+- iOSだけtalkの30秒タイマーを適用しない。停止関数にもiOSの早期returnを置き、残存する
+  コールバックから着信音・準備・画面・AlarmKitを終了しない。応答・拒否・スヌーズの経路は維持する。
+- Androidのtalkは従来どおり予約時刻＋30秒で終了する。wake/remindは変更しない。
+- iOSの静かな電話約束の単発・繰り返し通知へ`sound: "default"`を追加した。
+  通常通知のままで、Critical Alert・AlarmKitへ変更しない。
+- spec v5.116のA9へ反映した。DB・migration・Edge・Androidのファイルは変更していない。
+
+### 自動テストの確認
+
+前回実行したのは対象限定ではなく、リポジトリ全体の`npm test`である。
+実行コマンドは`npm test > /tmp/voice-companion-ios-ring-tests.log 2>&1`。
+`package.json`のpretestとtestの準備・検査を経て、`node --test tests/*.test.mjs`を実行している。
+終了コード0、ログの総件数106・成功106・失敗0・スキップ0。
+**このログの106件はテストファイル単位の集計であり、個々のtest()の総数ではない。**
+新規`tests/talkPromiseRingDeadline.test.mjs`と既存`tests/quietAlarms.test.mjs`も含む。
+アプリのbuildやiOSネイティブ実機試験の結果を示すものではない。
+
+### 未確認事項と次の工程
+
+- **修正後の実機確認はまだ。** iOS全画面着信が予約時刻＋30秒を超えても鳴り続けること、
+  応答・拒否・スヌーズで従来どおり停止することを確認する。期限超過後に画面が開く場合も含める。
+- 静かな電話約束が通常モードで通知音を鳴らし、サイレントモードでは無音となること、
+  通知タップから全画面着信へ進むことを単発・繰り返しで確認する。
+- Androidのtalkの30秒終了とwake/remindの鳴動・停止・スヌーズは実機回帰確認が残る。
+- 次はmain以外の今回のブランチを対象にCodemagicの`ios-voicecompanion`
+  （VoiceCompanion iOS Staging）を手動実行する。**この工程ではCodemagicはまだ実行しない。**）
 
 （v5.292: **利用者がAndroid・iOSの両方の実機で確認した。問題なし。この件は完了とする。**
 
@@ -879,7 +919,7 @@ Push着信へ戻す、端末への第一声の事前配布、60秒前のTTS prel
 ### 効果
 
 **実機未測定である。ms値は書かない。** 構造としては、これまで読み込みが始まらなかった回で
-「鳴り始めから応答まで」を使えるようになる（電話約束は最長30秒鳴る）。
+「鳴り始めから応答まで」を使えるようになる（Androidのtalk電話約束は予約時刻＋30秒まで。iOSの現在の仕様はv5.293を参照）。
 
 ### ここで一度実機を見る
 
