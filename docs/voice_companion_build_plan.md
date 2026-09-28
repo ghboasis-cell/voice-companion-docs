@@ -1,6 +1,31 @@
 # VoiceCompanion 作業手順書 兼 運用ルール
 
-**版数: v5.348 ／ 最終更新日: 2026-09-28**
+**版数: v5.349 ／ 最終更新日: 2026-09-29**
+
+（v5.349: **本番（voice-companion）のサーバを立てた**（9/29、利用者が決めた。staging を本番に流用する案は、試す場所が無くなるので採らなかった）。
+- 見つかった穴：キャラの行はランダムな ID で作られ、あとの migration とアプリの声モデル対応表は staging の ID を名指ししていた。
+  新しい DB ではキャラごとの更新がすべて素通りになる。キャラを作る4本に staging と同じ ID を書いた（PR #114）。
+- 手で入れていて migration に無い設定は、モーニング固定音声の登録27行と iPhone の入れ直し対策の ON だけ（staging の表を見て確認）。staging から写した。
+- 利用者が `!` で `reports/p1.sh`（本番へ link）→ `p2.sh`（`db reset --linked`、7月の試験データは消去を了承済み）→ `p3.sh` を打った。
+  - DB：migration 203本がエラーなし。キャラ11体が staging と同じ ID・名前・読み・誕生日で入った（読み取りで確認）。固定音声27・入れ直し対策 ON。
+  - vault 10件、合言葉6つ（乱数・画面に出さない）、設定値（モデル名・APNs/DeviceCheck は production・DEVICE_RECALL_MODE=enforce・連絡の DRY_RUN=false）。
+  - 関数11本を名前指定で出した（調査用の llm-comparison・memory-extraction-probe は出さない）。
+- 外のサービスの鍵（9/29 01:50 に30個そろったことを名前で確認）：Alibaba は既存のキー（東京の接続先は Model Studio の Tokyo「API Key」画面の
+  Pay-as-you-go Base URL の左側）。DeviceCheck は既存 `352574DVWA`、APNs は AIFitLog 用の `833AB82VAF`（Team Scoped・Sandbox & Production。
+  VoiceCompanion 用 `93L647P8PM` の .p8 は手元に無く、APNs の鍵は1チーム2つまでで消せないため）。Firebase は `voice-companion-staging` に
+  新しい秘密鍵を作った（本番の Android も google-services.json でこの Firebase を使う）。RevenueCat は既存の V1 secret key、
+  Webhook は `production` を足した（staging 向けは残した）。入れる道具は `reports/p5.sh`〜`p7.sh`（鍵の中身は画面に出さない）。
+- link は `reports/p4.sh` で staging へ戻した（9/29）。
+- アプリの本番ビルドの設定を直した（利用者が了承）：
+  - Android（`android-release-aab.yml`）：Rust・NDK・cargo-ndk の工程が無く、`buildJpreprocessJni` が cargo ndk を呼べずに止まる作りだった。
+    検証用と同じ工程を入れた。GitHub に `production` の environment が無く（404）接続先が空になるため、本番の URL と公開用キーを
+    ファイルへ直接書いた。声モデルの配信設定（検証用と同じ R2）と検査も入れた。versionCode は、同じアプリへ検証用の AAB（1000＋実行番号）も
+    上げているので、2026-01-01 からの経過分にした。
+  - iPhone（`codemagic.yaml` の本番）：接続先・公開用キー・声モデルの配信設定・`VITE_DEVICE_RECALL_MODE=enforce` を直接書き、検査を足した。
+    声の日本語処理は Xcode の build phase で作るので工程は足していない。
+  - テスト2件（本番に検査を入れない・本番は GitHub の変数から読む）を新しい決まりに直した。`npm test` 1,801件成功。
+  - 未確認：本番ビルドを CI で実際に回していない。
+- **残り**：本番はサンドボックス購入を受けないので、審査の購入でコインが入らない問題は未対応。）
 
 （v5.348: **ログインボーナスを、着信・モーニングの後にも出す**（9/28、利用者が決めた）。ブランチ `feature/login-bonus-after-call`（`accb249`）。
 - 前は着信・通話・モーニングの画面になった回を打ち切っていたので、モーニングに出てそのまま閉じた日はハンコが押されなかった。
